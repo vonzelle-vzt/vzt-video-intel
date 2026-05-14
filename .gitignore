@@ -13,3 +13,6 @@ tmp/
 *.tsbuildinfo
 eng.traineddata
 *.traineddata
+
+# smoke-test scratch output
+*.err
