@@ -2,6 +2,51 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.1.0] — 2026-05-14
+
+### Kill the Docker friction
+
+Three modes now ship out of the box. The CLI auto-detects which one fits your environment and routes each pipeline stage to the best adapter at runtime.
+
+- **🌩 Cloud mode** — every heavy backend runs on Replicate. Zero local infra. ~$0.06/min of video. Works on a fresh MacBook in 60 seconds.
+- **🪶 Lite mode** — pure-Node WASM pipeline. Whisper.cpp transcription, ffmpeg-static scene detection + keyframes, Tesseract.js OCR, CLIP-ONNX semantic search. No Docker, no GPU, no API key. Heavy backends (Qwen-VL, SAM2) skip gracefully.
+- **🛠 Local mode** — the existing self-hosted Docker stack. Still 10× cheaper than cloud at scale; just no longer the default install path.
+
+### Added
+
+- `src/runtime/auto.ts` — environment detection (GPU, Docker, ffmpeg, cloud key, reachable local backends) + `resolveMode()` that picks the best per-stage routing.
+- `src/runtime/mode.ts` — per-call stage resolver. Backends consult this before dispatching.
+- `src/runtime/cache.ts` — persists user mode choice + cloud token to `~/.vzt-video-intel/config.json` (0o600 perms).
+- `src/backends/cloud/replicate.ts` — minimal Replicate REST client (no SDK), POST predictions + poll until succeeded.
+- `src/backends/cloud/{whisperx, qwen-vl, sam2, clip, easyocr, scene-detect}.ts` — Replicate adapters for all 6 stages. Outputs reshaped to match the canonical `SceneGraph` schema.
+- `src/backends/lite/ffmpeg-scenes.ts` — scene detection + keyframe extraction via ffmpeg-static.
+- `src/backends/lite/whisper-wasm.ts` — Whisper.cpp via `nodejs-whisper`. Auto-downloads model on first run.
+- `src/backends/lite/tesseract-ocr.ts` — Tesseract.js with per-word bboxes.
+- `src/backends/lite/clip-onnx.ts` — `@xenova/transformers` CLIP ViT-B/32, zero-shot moment search.
+- **CLI commands**: `vintel auto` (detect + recommend), `vintel config [show|set]` (persisted config), `vintel login` (Replicate token).
+- **First-run wizard** — interactive 3-option prompt the first time you run `vintel analyze`. Choice persists; never asks again unless config is deleted.
+- `docs/INSTALL.md` — install guide for all 3 modes.
+- `docs/SELF-HOSTED.md` — local-mode deep dive.
+- `docs/CLOUD-PROVIDERS.md` — Replicate adapter docs + how to add new providers.
+
+### Changed
+
+- Every `src/backends/<x>.ts` rewritten as a mode-aware dispatcher. Same exported signature → orchestrator + CLI + MCP server unchanged. `resolveStage()` picks cloud/local/lite/skip per call.
+- `src/lib/env.ts` extended with `mode`, `cloudProvider`, `replicateToken`, `cacheDir`. Resolves from `process.env` > persisted config > defaults.
+- README rewrites the install section as three numbered paths (cloud / lite / local) with a `vintel auto` fallback. Docker is no longer in the first paragraph.
+- `vintel doctor` is now an alias for the local-only backend probe; `vintel auto` is the full environment audit.
+- Error messages now point users to `vintel login`, `vintel config set mode=lite`, or `vintel up` based on context — not just "boot the docker stack".
+
+### Tests
+
+- 4 new smoke tests covering runtime modules, cloud backends import, lite backends import, and `vintel auto` end-to-end.
+- Total smoke suite: 9/9 pass.
+
+### Dependencies
+
+- `commander`, `kleur` — already used; CLI dependencies stay tight.
+- New `optionalDependencies`: `ffmpeg-static`, `nodejs-whisper`, `tesseract.js`, `@xenova/transformers`. Users who only use cloud or local mode don't download these.
+
 ## [1.0.0] — 2026-05-13
 
 ### Added

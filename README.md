@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/Status-v1.0.0-purple.svg" alt="v1.0.0">
+  <img src="https://img.shields.io/badge/Status-v1.1.0-purple.svg" alt="v1.1.0">
   <img src="https://img.shields.io/badge/MCP-server-orange.svg" alt="MCP server">
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
   <img src="https://img.shields.io/badge/Backends-6-green.svg" alt="6 backends">
@@ -80,35 +80,50 @@ That's the whole product.
 
 ---
 
-## Get running in 60 seconds
+## Just give me a video
 
-You need **Docker**, **Node 20+**, and one **NVIDIA GPU** (Qwen2.5-VL + SAM2 + CLIP). CPU-only profile is also supported — see `--profile cpu`.
+You don't need Docker. You don't need a GPU. You need Node 20+. The CLI auto-detects what's available and picks the best execution path. Three modes ship out of the box:
+
+### 🌩 Cloud mode — works in 60 seconds anywhere
 
 ```bash
-# 1. clone + install
-git clone https://github.com/vonzelle-vzt/vzt-video-intel.git
-cd vzt-video-intel
-npm install && npm run build
-
-# 2. boot the 6 backends (downloads images on first run)
-npx vzt-video-intel init        # writes docker/.env from .env.example
-npx vzt-video-intel up          # starts the stack
-
-# 3. verify everything's healthy
-npx vzt-video-intel doctor
-# ✓ whisperx     http://localhost:9010  (42ms)
-# ✓ qwen-vl      http://localhost:9011  (88ms)
-# ✓ sam2         http://localhost:9012  (31ms)
-# ✓ scenedetect  http://localhost:9013  (12ms)
-# ✓ easyocr      http://localhost:9014  (24ms)
-# ✓ clip         http://localhost:9015  (39ms)
-# All 6 backends healthy.
-
-# 4. analyze a video
-npx vzt-video-intel analyze ./demo.mp4 > scene-graph.json
+npm install -g vzt-video-intel
+vintel login                            # paste a Replicate token (https://replicate.com/account/api-tokens)
+vintel analyze https://example.com/clip.mp4
 ```
 
-That's it. From clone to a Claude-ready scene graph: 4 commands.
+Every heavy backend runs on Replicate. ~$0.06/min of video. Zero local infra. Works on a fresh MacBook, a Codespace, a Lambda.
+
+### 🪶 Lite mode — free, offline, zero install
+
+```bash
+npm install -g vzt-video-intel
+vintel analyze ./demo.mp4               # first run prompts you to pick a mode; pick lite
+```
+
+Whisper.cpp + ffmpeg + Tesseract + CLIP-ONNX, all pure-Node WASM. No Docker, no GPU, no API key. Heavy backends (Qwen-VL, SAM2) skip gracefully — you still get transcript, scenes, OCR, and CLIP search. Slower than cloud (~5× real-time on CPU), but free and runs on a plane.
+
+### 🛠 Local mode — 10× cheaper at scale
+
+```bash
+git clone https://github.com/vonzelle-vzt/vzt-video-intel.git
+cd vzt-video-intel && npm install && npm run build
+vintel up                               # boots all 6 backends via docker-compose (needs Docker + GPU)
+vintel analyze ./demo.mp4
+```
+
+Full self-hosted GPU stack. The power-user mode — boots WhisperX, Qwen2.5-VL, SAM2, PySceneDetect, EasyOCR, CLIP as FastAPI services. About **$0.30 / GPU-hour** vs cloud's $3.50, so it pays for itself the first month at any non-trivial volume.
+
+### Auto — let it pick
+
+```bash
+vintel auto                             # prints recommended mode + per-stage routing
+vintel auto --apply                     # persists the recommendation
+```
+
+`vintel auto` checks for an NVIDIA GPU, Docker daemon, ffmpeg, a Replicate token, and reachable local backends, then picks the best mode automatically. First-run wizard runs the same flow interactively the first time you call `vintel analyze`.
+
+The output schema is **identical** across all three modes — only the execution path changes. Scene graphs you produced in lite mode are byte-for-byte compatible with cloud-mode scene graphs (minus the entities/actions arrays when those stages are skipped).
 
 ---
 
@@ -173,8 +188,11 @@ vzt-video-intel <command> [options]    # or `vintel` as a shorter alias
   search <source> <query>      CLIP semantic moment search
   chapters <source>            Qwen2.5-VL chapter generation
 
-  doctor                       health-check all 6 backends
-  up [--profile cpu|gpu]       boot the docker stack
+  auto [--apply]               detect environment + recommend the best mode
+  config [show|set k=v]        show or edit persisted config
+  login [token]                store a Replicate API token
+  doctor                       health-check local Docker backends
+  up [--profile cpu|gpu]       boot the docker stack (local mode)
   down                         stop the docker stack
   init [--mcp-config]          first-run wizard
   mcp                          run as MCP stdio server (for Claude Code, Cursor, OpenCode)
