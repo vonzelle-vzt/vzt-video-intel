@@ -2,6 +2,41 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.1.1] — 2026-05-14
+
+End-to-end smoke test on a fresh Windows machine (no GPU, no Docker, no cloud
+token) uncovered three lite-mode bugs. Patched, retested, all 6 stages now
+verified working against a 12-second synthetic test clip.
+
+### Fixed
+
+- **Whisper transcription on Windows** — `nodejs-whisper` requires compiling
+  `whisper-cli` from C++ source, which doesn't work out of the box on Windows.
+  Rewrote `src/backends/lite/whisper-wasm.ts` to use `@xenova/transformers`
+  (which we already depend on for CLIP) — pure WASM Whisper-tiny, no native
+  compilation, works identically on macOS/Linux/Windows. Drops `nodejs-whisper`
+  from optionalDependencies.
+- **OCR language codes** — `tesseract.js` uses ISO 639-2/T 3-letter codes
+  (`eng` not `en`). Default value was `["en"]`, causing a 404 on the model
+  CDN. Added a normalization map for the 13 most common languages so callers
+  can pass either form.
+- **CLIP semantic search shipped as stub** — the `clip-onnx.ts` file in the
+  v1.1.0 release was still the v1.0.0 stub (parallel-write race). Real
+  `@xenova/transformers` CLIP ViT-B/32 implementation now in place. Verified:
+  finds the red scene of a 3-scene test clip with score 1.0.
+
+### Verified working (lite mode, no GPU / no Docker / no cloud)
+
+- `vintel scenes ./clip.mp4` — ffmpeg-static detects scene boundaries
+- `vintel keyframes ./clip.mp4` — extracts per-scene JPEGs, parses dimensions
+- `vintel transcribe ./clip.mp4` — Xenova/whisper-tiny.en via WASM (~5s for 12s audio)
+- `vintel ocr ./clip.mp4` — Tesseract.js detects on-screen text with bboxes + 93%+ confidence
+- `vintel search ./clip.mp4 "query"` — CLIP ViT-B/32 ONNX
+- `vintel analyze ./clip.mp4` — full pipeline in ~5s for 12s clip on CPU
+- `vintel auto` — environment detection
+- `vintel config set mode=...` — persisted config
+- Cloud-mode friendly error correctly points users to `vintel login` / `vintel config set mode=lite` / `vintel up`
+
 ## [1.1.0] — 2026-05-14
 
 ### Kill the Docker friction

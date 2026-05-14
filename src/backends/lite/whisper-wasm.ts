@@ -1,6 +1,6 @@
-// Lite WhisperX via nodejs-whisper.
-// Extracts audio with ffmpeg-static, transcribes with whisper.cpp via the
-// nodejs-whisper wrapper, reshapes output to TranscriptSegment[].
+// Lite WhisperX via @xenova/transformers (Xenova/whisper-tiny.en).
+// Pure WASM — no native compilation, works identically on macOS / Linux / Windows.
+// We already depend on @xenova/transformers for CLIP, so this reuses that runtime.
 
 import { spawn } from "node:child_process";
 import { mkdirSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -23,7 +23,40 @@ function ffmpegPath(): string {
   return "ffmpeg";
 }
 
-async function extractAudio(source: string): Promise<string> {
+// Decode a 16-bit PCM WAV file into a Float32Array of mono samples in [-1, 1].
+function readWavAsFloat32(path: string): { samples: Float32Array; sampleRate: number } {
+  const buf = readFileSync(path);
+  // Parse minimal RIFF/WAV header
+  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error("not a WAV file");
+  }
+  let offset = 12;
+  let sampleRate = 16000;
+  let dataOffset = -1;
+  let dataSize = 0;
+  while (offset < buf.length - 8) {
+    const id = buf.toString("ascii", offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    if (id === "fmt ") {
+      sampleRate = buf.readUInt32LE(offset + 12);
+    }
+    if (id === "data") {
+      dataOffset = offset + 8;
+      dataSize = size;
+      break;
+    }
+    offset += 8 + size;
+  }
+  if (dataOffset < 0) throw new Error("no WAV data chunk");
+  const sampleCount = dataSize / 2; // 16-bit PCM mono
+  const samples = new Float32Array(sampleCount);
+  for (let i = 0; i < sampleCount; i++) {
+    samples[i] = buf.readInt16LE(dataOffset + i * 2) / 32768;
+  }
+  return { samples, sampleRate };
+}
+
+async function extractAudioPcm(source: string): Promise<{ samples: Float32Array; sampleRate: number; tmpDir: string }> {
   const tmpDir = join(tmpdir(), `vintel-audio-${Date.now()}`);
   mkdirSync(tmpDir, { recursive: true });
   let local = source;
@@ -34,13 +67,11 @@ async function extractAudio(source: string): Promise<string> {
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(local, buf);
   }
-  const out = join(tmpDir, "audio.wav");
+  const wav = join(tmpDir, "audio.wav");
   const child = spawn(ffmpegPath(), [
     "-i", local,
-    "-ar", "16000",
-    "-ac", "1",
-    "-c:a", "pcm_s16le",
-    "-y", out,
+    "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+    "-y", wav,
   ], { stdio: ["ignore", "ignore", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (c) => (stderr += c.toString()));
@@ -48,69 +79,51 @@ async function extractAudio(source: string): Promise<string> {
     child.on("error", reject);
     child.on("close", (c) => resolve(c ?? 0));
   });
-  if (code !== 0 || !existsSync(out)) {
+  if (code !== 0 || !existsSync(wav)) {
     throw new Error(`ffmpeg audio extraction failed: ${stderr.slice(-400)}`);
   }
-  return out;
+  const { samples, sampleRate } = readWavAsFloat32(wav);
+  try { unlinkSync(wav); } catch { /* ignore */ }
+  return { samples, sampleRate, tmpDir };
 }
 
 export async function liteTranscribe(opts: WhisperXOptions): Promise<{ segments: TranscriptSegment[]; language?: string }> {
-  let nodewhisper: any;
+  let pipeline: any;
   try {
-    const mod = await import("nodejs-whisper");
-    nodewhisper = mod.nodewhisper ?? mod.default ?? mod;
+    const mod = await import("@xenova/transformers");
+    pipeline = mod.pipeline;
   } catch {
     throw new Error(
-      "lite-mode transcribe requires `nodejs-whisper` (declared optional). " +
-      "Run `npm install nodejs-whisper` or switch to cloud mode with `vintel login`.",
+      "lite-mode transcribe requires `@xenova/transformers` (declared optional). " +
+      "Run `npm install @xenova/transformers` or switch to cloud mode with `vintel login`.",
     );
   }
 
-  const audioPath = await extractAudio(opts.source);
-  const model = process.env.VZT_WHISPER_MODEL ?? "base.en";
+  const model = process.env.VZT_WHISPER_MODEL ?? "Xenova/whisper-tiny.en";
+  const { samples } = await extractAudioPcm(opts.source);
 
-  try {
-    const result = await nodewhisper(audioPath, {
-      modelName: model,
-      autoDownloadModelName: model,
-      removeWavFileAfterTranscription: false,
-      withCuda: false,
-      whisperOptions: {
-        outputInJson: true,
-        outputInText: false,
-        outputInSrt: false,
-        outputInVtt: false,
-        translateToEnglish: false,
-        language: opts.language ?? "auto",
-      },
-    });
+  // eslint-disable-next-line no-console
+  console.error(`[vintel] transcribing ${(samples.length / 16000).toFixed(1)}s of audio with ${model} (WASM)…`);
+  const transcriber = await pipeline("automatic-speech-recognition", model);
+  const result = await transcriber(samples, {
+    chunk_length_s: 30,
+    stride_length_s: 5,
+    return_timestamps: true,
+    language: opts.language === "auto" ? undefined : opts.language,
+  });
 
-    // nodejs-whisper writes <audioPath>.json next to the wav; result may be the path or content.
-    const jsonPath = audioPath.replace(/\.wav$/, ".wav.json");
-    let segments: TranscriptSegment[] = [];
-    if (existsSync(jsonPath)) {
-      const parsed = JSON.parse(readFileSync(jsonPath, "utf-8"));
-      const raw = parsed.transcription ?? parsed.segments ?? [];
-      segments = raw.map((s: { timestamps?: { from: string; to: string }; offsets?: { from: number; to: number }; text: string }) => ({
-        start_ms: s.offsets?.from ?? parseTimeToMs(s.timestamps?.from ?? "00:00:00.000"),
-        end_ms: s.offsets?.to ?? parseTimeToMs(s.timestamps?.to ?? "00:00:00.000"),
-        text: s.text.trim(),
-      }));
-      try { unlinkSync(jsonPath); } catch { /* ignore */ }
-    } else if (typeof result === "string") {
-      segments = [{ start_ms: 0, end_ms: 0, text: result.trim() }];
-    }
+  const chunks: { timestamp: [number, number]; text: string }[] = result?.chunks ?? [];
+  const segments: TranscriptSegment[] = chunks
+    .filter((c) => c.text?.trim().length > 0)
+    .map((c) => ({
+      start_ms: Math.round((c.timestamp[0] ?? 0) * 1000),
+      end_ms: Math.round((c.timestamp[1] ?? c.timestamp[0] ?? 0) * 1000),
+      text: c.text.trim(),
+    }));
 
-    try { unlinkSync(audioPath); } catch { /* ignore */ }
-    return { segments, language: opts.language };
-  } catch (err) {
-    try { unlinkSync(audioPath); } catch { /* ignore */ }
-    throw err;
+  if (!segments.length && typeof result?.text === "string") {
+    segments.push({ start_ms: 0, end_ms: 0, text: result.text.trim() });
   }
-}
 
-function parseTimeToMs(ts: string): number {
-  const m = ts.match(/(\d+):(\d+):(\d+)[.,](\d+)/);
-  if (!m) return 0;
-  return (parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10)) * 1000 + parseInt(m[4].padEnd(3, "0").slice(0, 3), 10);
+  return { segments, language: opts.language };
 }

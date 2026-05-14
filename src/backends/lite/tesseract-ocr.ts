@@ -30,7 +30,16 @@ export async function liteOcrOverlay(opts: OcrOptions): Promise<{ regions: OcrRe
     throw new Error("lite-mode OCR requires `tesseract.js`. Run `npm install tesseract.js`.");
   }
   const sampleEvery = opts.sampleEveryMs ?? 1000;
-  const langs = (opts.languages ?? ["en"]).join("+");
+  // Tesseract uses ISO 639-2/T 3-letter codes ("eng" not "en"). Normalize common cases
+  // so users can pass either. Without this, tesseract.js tries to fetch a non-existent
+  // `@tesseract.js-data/en` package and 404s.
+  const langMap: Record<string, string> = {
+    en: "eng", es: "spa", fr: "fra", de: "deu", it: "ita", pt: "por", nl: "nld",
+    ja: "jpn", ko: "kor", zh: "chi_sim", ru: "rus", ar: "ara", hi: "hin",
+  };
+  const langs = (opts.languages ?? ["eng"])
+    .map((l) => langMap[l.toLowerCase()] ?? l)
+    .join("+");
 
   const tmpDir = join(tmpdir(), `vintel-ocr-${Date.now()}`);
   mkdirSync(tmpDir, { recursive: true });
