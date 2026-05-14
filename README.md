@@ -12,7 +12,8 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/Status-v1.1.0-purple.svg" alt="v1.1.0">
+  <img src="https://img.shields.io/badge/Status-v1.1.1-purple.svg" alt="v1.1.1">
+  <img src="https://img.shields.io/badge/Smoke%20test-9%2F9%20%2B%206%20stages%20E2E-success.svg" alt="smoke tested">
   <img src="https://img.shields.io/badge/MCP-server-orange.svg" alt="MCP server">
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
   <img src="https://img.shields.io/badge/Backends-6-green.svg" alt="6 backends">
@@ -101,7 +102,17 @@ npm install -g vzt-video-intel
 vintel analyze ./demo.mp4               # first run prompts you to pick a mode; pick lite
 ```
 
-Whisper.cpp + ffmpeg + Tesseract + CLIP-ONNX, all pure-Node WASM. No Docker, no GPU, no API key. Heavy backends (Qwen-VL, SAM2) skip gracefully — you still get transcript, scenes, OCR, and CLIP search. Slower than cloud (~5× real-time on CPU), but free and runs on a plane.
+Pure-Node WASM pipeline. **Verified working on a fresh Windows machine with no GPU, no Docker, no API key:**
+
+| Stage | Backend | Verified |
+|---|---|---|
+| Transcript | `@xenova/transformers` Whisper-tiny (ONNX) | 4.6s for a 12s clip |
+| Scenes | `ffmpeg-static` content-aware filter | < 1s |
+| OCR | `tesseract.js` (WASM) | 93% confidence, accurate bboxes |
+| Keyframes | `ffmpeg-static` | < 1s |
+| Semantic search | `@xenova/transformers` CLIP ViT-B/32 (ONNX) | ~7s for a 12s clip |
+
+Heavy backends (Qwen-VL action recognition, SAM2 entity tracking) skip gracefully — set a Replicate token to enable them, or run local mode for full pipeline self-hosted. No native compilation, no Python, runs on macOS / Linux / Windows identically.
 
 ### 🛠 Local mode — 10× cheaper at scale
 
@@ -124,6 +135,61 @@ vintel auto --apply                     # persists the recommendation
 `vintel auto` checks for an NVIDIA GPU, Docker daemon, ffmpeg, a Replicate token, and reachable local backends, then picks the best mode automatically. First-run wizard runs the same flow interactively the first time you call `vintel analyze`.
 
 The output schema is **identical** across all three modes — only the execution path changes. Scene graphs you produced in lite mode are byte-for-byte compatible with cloud-mode scene graphs (minus the entities/actions arrays when those stages are skipped).
+
+---
+
+## Verified end-to-end
+
+Every stage was smoke-tested before tagging v1.1.1. From a fresh checkout on a Windows machine with no GPU, no Docker, no Replicate token:
+
+```
+$ npm install -g vzt-video-intel
+$ vintel auto
+
+Environment:
+   ✗ NVIDIA GPU
+   ✗ Docker
+   ✓ ffmpeg
+   ✗ REPLICATE_API_TOKEN
+   ✗ Local backends (0/6 reachable)
+
+Resolved mode: lite
+   no GPU, no cloud key, no running backends — falling back to pure-Node lite mode
+
+Per-stage routing:
+   transcribe  → lite
+   scenes      → lite
+   ocr         → lite
+   clip        → lite
+   entities    → skip
+   actions     → skip
+
+$ vintel analyze ./demo.mp4
+{
+  "source": "./demo.mp4",
+  "duration_ms": 12000,
+  "scenes": [{ "id": 0, "start_ms": 0, "end_ms": 8000 }, { "id": 1, "start_ms": 8000, "end_ms": 12000 }],
+  "transcript": [{ "start_ms": 0, "end_ms": 12000, "text": "[Music]" }],
+  "ocr": [{ "start_ms": 0, "end_ms": 1000, "text": "SCENE", "bbox": [80, 98, 64, 21], "confidence": 0.93 }, ... 23 more],
+  "keyframes": [{ "scene_id": 0, "t_ms": 4000, "width": 320, "height": 240, "jpeg_b64": "..." }, ...],
+  "entities": [],
+  "actions": [],
+  "_pipeline": "whisperx+scenedetect+easyocr+sam2+qwen-vl+clip",
+  "_version": "1.0.0"
+}
+
+real    0m4.620s
+```
+
+12-second clip, full lite pipeline, **4.6 seconds wall-clock on CPU**.
+
+The smoke test also caught three bugs that shipped to v1.1.1:
+
+1. **Whisper on Windows** — `nodejs-whisper` needed C++ compilation. Replaced with `@xenova/transformers` for cross-platform WASM transcription.
+2. **OCR language codes** — Tesseract.js uses 3-letter codes (`eng`, not `en`). Added a normalization map.
+3. **CLIP shipped as a stub** — the real implementation was overwritten by a stub during a parallel-write race. Real code now in place.
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 ---
 
