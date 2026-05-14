@@ -11,3 +11,5 @@ test/fixtures/*.mov
 test/fixtures/*.webm
 tmp/
 *.tsbuildinfo
+eng.traineddata
+*.traineddata
