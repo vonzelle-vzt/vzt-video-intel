@@ -44,3 +44,42 @@ test("All 6 backend modules import", async () => {
 test("Schema types module imports", async () => {
   await import("../src/schema/types.js");
 });
+
+test("Runtime modules import (auto, mode, cache)", async () => {
+  const auto = await import("../src/runtime/auto.js");
+  const mode = await import("../src/runtime/mode.js");
+  const cache = await import("../src/runtime/cache.js");
+  assert.equal(typeof auto.detect, "function");
+  assert.equal(typeof auto.resolveMode, "function");
+  assert.equal(typeof mode.resolveStage, "function");
+  assert.equal(typeof cache.readConfig, "function");
+});
+
+test("Cloud backends import", async () => {
+  await import("../src/backends/cloud/replicate.js");
+  await import("../src/backends/cloud/whisperx.js");
+  await import("../src/backends/cloud/qwen-vl.js");
+  await import("../src/backends/cloud/sam2.js");
+  await import("../src/backends/cloud/clip.js");
+  await import("../src/backends/cloud/easyocr.js");
+  await import("../src/backends/cloud/scene-detect.js");
+});
+
+test("Lite backends import", async () => {
+  await import("../src/backends/lite/whisper-wasm.js");
+  await import("../src/backends/lite/ffmpeg-scenes.js");
+  await import("../src/backends/lite/tesseract-ocr.js");
+  await import("../src/backends/lite/clip-onnx.js");
+});
+
+test("vintel auto prints environment report", () => {
+  const result = spawnSync("node", ["--import", "tsx", join(root, "src/cli.ts"), "auto"], {
+    encoding: "utf-8",
+    timeout: 30000,
+    env: { ...process.env, VZT_VIDEO_INTEL_HOME: "/tmp/vintel-smoke-test" },
+  });
+  assert.equal(result.status, 0, "auto should exit 0");
+  assert.match(result.stdout, /Environment:/);
+  assert.match(result.stdout, /Resolved mode:/);
+  assert.match(result.stdout, /Per-stage routing:/);
+});
