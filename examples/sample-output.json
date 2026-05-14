@@ -1,0 +1,67 @@
+{
+  "source": "./examples/demo-30s.mp4",
+  "duration_ms": 30000,
+  "scenes": [
+    { "id": 0, "start_ms": 0, "end_ms": 4200, "shot_type": "wide" },
+    { "id": 1, "start_ms": 4200, "end_ms": 12800, "shot_type": "medium" },
+    { "id": 2, "start_ms": 12800, "end_ms": 21000, "shot_type": "close" },
+    { "id": 3, "start_ms": 21000, "end_ms": 30000, "shot_type": "medium" }
+  ],
+  "transcript": [
+    { "start_ms": 120, "end_ms": 2800, "text": "Welcome back to the show, everyone.", "speaker": "SPEAKER_00", "confidence": 0.94 },
+    { "start_ms": 3100, "end_ms": 5400, "text": "Today we're breaking down Q3 earnings.", "speaker": "SPEAKER_00", "confidence": 0.91 },
+    { "start_ms": 5800, "end_ms": 9200, "text": "Thanks for having me. The numbers came in better than consensus.", "speaker": "SPEAKER_01", "confidence": 0.89 },
+    { "start_ms": 9500, "end_ms": 14000, "text": "Let me walk you through the chart on screen.", "speaker": "SPEAKER_01", "confidence": 0.93 },
+    { "start_ms": 14500, "end_ms": 20800, "text": "Revenue up 18 percent year over year, gross margin held at 62.", "speaker": "SPEAKER_01", "confidence": 0.90 },
+    { "start_ms": 21500, "end_ms": 28000, "text": "And that's what we're seeing across the sector. Back to you.", "speaker": "SPEAKER_00", "confidence": 0.92 }
+  ],
+  "entities": [
+    {
+      "tracking_id": "p1",
+      "label": "person",
+      "confidence": 0.95,
+      "appearances": [
+        { "scene_id": 0, "start_ms": 0, "end_ms": 4200, "bboxes": [{ "t_ms": 2100, "bbox": [80, 120, 320, 480] }] },
+        { "scene_id": 3, "start_ms": 21000, "end_ms": 30000, "bboxes": [{ "t_ms": 25000, "bbox": [120, 100, 340, 500] }] }
+      ]
+    },
+    {
+      "tracking_id": "p2",
+      "label": "person",
+      "confidence": 0.93,
+      "appearances": [
+        { "scene_id": 1, "start_ms": 4200, "end_ms": 12800, "bboxes": [{ "t_ms": 8000, "bbox": [400, 110, 320, 500] }] },
+        { "scene_id": 2, "start_ms": 12800, "end_ms": 21000, "bboxes": [{ "t_ms": 17000, "bbox": [200, 60, 600, 600] }] }
+      ]
+    },
+    {
+      "tracking_id": "obj1",
+      "label": "chart",
+      "confidence": 0.88,
+      "appearances": [
+        { "scene_id": 2, "start_ms": 12800, "end_ms": 21000, "bboxes": [{ "t_ms": 16500, "bbox": [600, 150, 400, 300] }] }
+      ]
+    }
+  ],
+  "actions": [
+    { "scene_id": 0, "start_ms": 0, "end_ms": 4200, "label": "speaking to camera", "actors": ["p1"], "confidence": 0.91 },
+    { "scene_id": 1, "start_ms": 4200, "end_ms": 12800, "label": "two-person interview", "actors": ["p1", "p2"], "confidence": 0.87 },
+    { "scene_id": 2, "start_ms": 12800, "end_ms": 21000, "label": "pointing at chart", "actors": ["p2"], "confidence": 0.84 },
+    { "scene_id": 3, "start_ms": 21000, "end_ms": 30000, "label": "closing remarks", "actors": ["p1"], "confidence": 0.89 }
+  ],
+  "ocr": [
+    { "start_ms": 0, "end_ms": 4200, "text": "LIVE • MARKET WRAP", "bbox": [40, 20, 280, 50], "language": "en", "confidence": 0.93 },
+    { "start_ms": 12800, "end_ms": 21000, "text": "Q3 REVENUE +18% YoY", "bbox": [620, 160, 340, 60], "language": "en", "confidence": 0.91 },
+    { "start_ms": 12800, "end_ms": 21000, "text": "GM 62%", "bbox": [620, 240, 120, 40], "language": "en", "confidence": 0.90 }
+  ],
+  "keyframes": [
+    { "scene_id": 0, "t_ms": 2100, "width": 1280, "height": 720 },
+    { "scene_id": 1, "t_ms": 8500, "width": 1280, "height": 720 },
+    { "scene_id": 2, "t_ms": 16900, "width": 1280, "height": 720 },
+    { "scene_id": 3, "t_ms": 25500, "width": 1280, "height": 720 }
+  ],
+  "mux_base": null,
+  "_pipeline": "whisperx+scenedetect+easyocr+sam2+qwen-vl+clip",
+  "_generated_at": "2026-05-13T22:14:08.901Z",
+  "_version": "1.0.0"
+}

@@ -1,0 +1,131 @@
+services:
+  whisperx:
+    build: ./whisperx
+    image: vzt-video-intel/whisperx:latest
+    ports: ["9010:9010"]
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3}
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./.cache/whisperx:/root/.cache
+      - vi-shared-media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9010/health"]
+      interval: 10s
+      retries: 6
+      start_period: 60s
+    profiles: ["cpu", "gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  qwen-vl:
+    build: ./qwen-vl
+    image: vzt-video-intel/qwen-vl:latest
+    ports: ["9011:9011"]
+    environment:
+      - QWEN_MODEL=${QWEN_MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./.cache/qwen-vl:/root/.cache
+      - vi-shared-media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9011/health"]
+      interval: 15s
+      retries: 8
+      start_period: 120s
+    profiles: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  sam2:
+    build: ./sam2
+    image: vzt-video-intel/sam2:latest
+    ports: ["9012:9012"]
+    volumes:
+      - ./.cache/sam2:/root/.cache
+      - vi-shared-media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9012/health"]
+      interval: 10s
+      retries: 6
+      start_period: 60s
+    profiles: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  scenedetect:
+    build: ./scenedetect
+    image: vzt-video-intel/scenedetect:latest
+    ports: ["9013:9013"]
+    volumes:
+      - vi-shared-media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9013/health"]
+      interval: 10s
+      retries: 6
+      start_period: 30s
+    profiles: ["cpu", "gpu"]
+    restart: unless-stopped
+
+  easyocr:
+    build: ./easyocr
+    image: vzt-video-intel/easyocr:latest
+    ports: ["9014:9014"]
+    environment:
+      - OCR_LANGS=${OCR_LANGS:-en}
+    volumes:
+      - ./.cache/easyocr:/root/.EasyOCR
+      - vi-shared-media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9014/health"]
+      interval: 10s
+      retries: 6
+      start_period: 45s
+    profiles: ["cpu", "gpu"]
+    restart: unless-stopped
+
+  clip:
+    build: ./clip
+    image: vzt-video-intel/clip:latest
+    ports: ["9015:9015"]
+    environment:
+      - CLIP_MODEL=${CLIP_MODEL:-ViT-L-14}
+    volumes:
+      - ./.cache/clip:/root/.cache
+      - vi-shared-media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9015/health"]
+      interval: 10s
+      retries: 6
+      start_period: 45s
+    profiles: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  vi-shared-media:
+    driver: local

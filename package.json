@@ -1,0 +1,73 @@
+{
+  "name": "vzt-video-intel",
+  "version": "1.0.0",
+  "description": "VZT Video-Intel — temporal scene-graph MCP + CLI that gives Claude video understanding. Self-hosted, structured JSON output, 10x cheaper than Gemini native video.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "vzt-video-intel": "./bin/vzt-video-intel.js",
+    "vintel": "./bin/vzt-video-intel.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "start:mcp": "node dist/cli.js mcp",
+    "doctor": "node dist/cli.js doctor",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx test/smoke.test.ts"
+  },
+  "files": [
+    "dist",
+    "src",
+    "bin",
+    "assets",
+    "docs",
+    "examples",
+    "docker",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "video",
+    "video-intelligence",
+    "temporal-scene-graph",
+    "claude",
+    "mcp",
+    "model-context-protocol",
+    "whisperx",
+    "qwen2-vl",
+    "sam2",
+    "scene-detection",
+    "ocr",
+    "clip",
+    "transcription",
+    "self-hosted"
+  ],
+  "author": "VZT Tech Consulting",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vonzelle-vzt/vzt-video-intel.git"
+  },
+  "homepage": "https://github.com/vonzelle-vzt/vzt-video-intel#readme",
+  "bugs": {
+    "url": "https://github.com/vonzelle-vzt/vzt-video-intel/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "commander": "^12.1.0",
+    "kleur": "^4.1.5",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

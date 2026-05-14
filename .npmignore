@@ -1,0 +1,8 @@
+src/
+test/
+docker/
+.github/
+.gitignore
+tsconfig.json
+*.log
+node_modules/
