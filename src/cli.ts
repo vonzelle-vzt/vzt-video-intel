@@ -10,15 +10,19 @@
 //   ocr           On-screen text extraction
 //   search        CLIP semantic moment search
 //   chapters      Qwen2.5-VL chapter generation
+//   auto          Detect environment + pick best mode (cloud / local / lite)
+//   config        Show or set persisted configuration
+//   login         Store cloud API token
 //   doctor        Health-check all 6 backends
 //   up            Boot the docker-compose stack
 //   down          Stop the docker-compose stack
-//   init          First-run wizard — creates .env, pulls images, prints next steps
+//   init          First-run wizard — creates .env, prints next steps
 //   mcp           Run as an MCP stdio server (for Claude Code, Cursor, OpenCode)
 
 import { Command } from "commander";
 import { spawn } from "node:child_process";
 import { existsSync, copyFileSync, mkdirSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import kleur from "kleur";
@@ -32,6 +36,10 @@ import { semanticSearch } from "./backends/clip.js";
 import { generateChapters } from "./backends/qwen-vl.js";
 import { verifyBackends } from "./lib/verify-backends.js";
 import { startMcpServer } from "./index.js";
+import { detect, resolveMode } from "./runtime/auto.js";
+import { readConfig, writeConfig, isFirstRun, markFirstRunComplete } from "./runtime/cache.js";
+import { invalidateRoutingCache } from "./runtime/mode.js";
+import type { Mode } from "./lib/env.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const PKG_ROOT = resolve(dirname(__filename), "..");
@@ -41,7 +49,7 @@ const program = new Command();
 program
   .name("vzt-video-intel")
   .description("VZT Video-Intel — temporal scene-graph CLI + MCP server. Gives Claude video understanding.")
-  .version("1.0.0");
+  .version("1.1.0");
 
 function print(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + "\n");
@@ -53,14 +61,67 @@ async function tryOrHelp<T>(fn: () => Promise<T>): Promise<T | void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(kleur.red("✖ ") + msg);
-    if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed")) {
+    if (msg.includes("REPLICATE_API_TOKEN")) {
+      console.error("");
+      console.error(kleur.yellow("No cloud token. Options:"));
+      console.error("  " + kleur.cyan("vintel login") + "                  add a Replicate token");
+      console.error("  " + kleur.cyan("vintel config set mode=lite") + "   use free offline mode");
+      console.error("  " + kleur.cyan("vintel up") + "                     boot the local Docker stack");
+    } else if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed")) {
       console.error("");
       console.error(kleur.yellow("Backend not reachable. Try:"));
-      console.error("  " + kleur.cyan("vzt-video-intel doctor") + "    diagnose which backend is offline");
-      console.error("  " + kleur.cyan("vzt-video-intel up") + "        boot the docker stack");
+      console.error("  " + kleur.cyan("vintel auto") + "       redetect and pick the best mode");
+      console.error("  " + kleur.cyan("vintel up") + "         boot the local Docker stack");
+      console.error("  " + kleur.cyan("vintel login") + "      add a cloud token to use Replicate");
     }
     process.exit(1);
   }
+}
+
+async function prompt(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(question)).trim();
+  } finally {
+    rl.close();
+  }
+}
+
+async function runFirstRunWizardIfNeeded(): Promise<void> {
+  if (!isFirstRun()) return;
+  console.log(kleur.bold("✨ First run — picking your mode."));
+  console.log("   " + kleur.gray("Detecting your environment..."));
+  const det = await detect();
+  console.log(`   ${det.hasGpu ? kleur.green("✓") : kleur.red("✗")} NVIDIA GPU`);
+  console.log(`   ${det.hasDocker ? kleur.green("✓") : kleur.red("✗")} Docker`);
+  console.log(`   ${det.hasFfmpeg ? kleur.green("✓") : kleur.red("✗")} ffmpeg`);
+  console.log(`   ${det.hasCloudKey ? kleur.green("✓") : kleur.red("✗")} REPLICATE_API_TOKEN`);
+  console.log(`   ${det.localBackendsReachable === 6 ? kleur.green("✓") : kleur.red("✗")} Local backends (${det.localBackendsReachable}/6 reachable)`);
+  console.log("");
+  console.log(kleur.bold("🤔 You have three options:"));
+  console.log("   " + kleur.cyan("[1] cloud") + "  Use Replicate for heavy backends.  ~$0.06/min");
+  console.log("   " + kleur.cyan("[2] lite") + "   Pure-Node WASM where possible.  Free + offline.  (lands in slice 3)");
+  console.log("   " + kleur.cyan("[3] local") + "  Self-host the Docker stack.  Cheapest at scale.");
+  console.log("");
+  console.log(kleur.gray("   Recommended: " + det.recommendedMode + " — " + det.recommendedReason));
+  console.log("");
+  const choice = (await prompt("> ")).toLowerCase();
+  let mode: Mode;
+  if (choice === "1" || choice === "cloud") mode = "cloud";
+  else if (choice === "2" || choice === "lite") mode = "lite";
+  else if (choice === "3" || choice === "local") mode = "local";
+  else mode = det.recommendedMode;
+  writeConfig({ mode });
+  if (mode === "cloud" && !det.hasCloudKey) {
+    console.log("");
+    const token = await prompt("Paste your Replicate API token (or press Enter to skip): ");
+    if (token) writeConfig({ replicateToken: token });
+  }
+  markFirstRunComplete();
+  invalidateRoutingCache();
+  console.log("");
+  console.log(kleur.green("✓ ") + `Mode set to ${kleur.cyan(mode)}. Saved to ~/.vzt-video-intel/config.json`);
+  console.log("");
 }
 
 program
@@ -73,6 +134,7 @@ program
   .option("-l, --language <iso>", "language hint (e.g. en, es)")
   .option("--max-scenes <n>", "cap scenes returned", (v) => parseInt(v, 10))
   .action(async (source: string, opts) => {
+    await runFirstRunWizardIfNeeded();
     await tryOrHelp(async () => {
       const result = await analyzeVideo({
         source,
@@ -151,7 +213,7 @@ program
 
 program
   .command("doctor")
-  .description("Health-check all 6 backends; print a status report")
+  .description("Health-check all 6 local backends (alias of `auto` for backward-compat)")
   .action(async () => {
     const report = await verifyBackends();
     const offline = report.filter((b) => !b.reachable);
@@ -162,11 +224,89 @@ program
     }
     if (offline.length > 0) {
       console.log("");
-      console.log(kleur.yellow(`${offline.length}/6 backends offline. Boot the stack with: ${kleur.cyan("vzt-video-intel up")}`));
+      console.log(kleur.yellow(`${offline.length}/6 local backends offline. Run ${kleur.cyan("vintel auto")} for a full environment report and mode recommendation.`));
       process.exit(1);
     }
     console.log("");
     console.log(kleur.green("All 6 backends healthy."));
+  });
+
+program
+  .command("auto")
+  .description("Detect environment, recommend the best mode, optionally persist it")
+  .option("--apply", "save the recommended mode to ~/.vzt-video-intel/config.json")
+  .action(async (opts) => {
+    const { mode, detection, routing } = await resolveMode();
+    console.log(kleur.bold("Environment:"));
+    console.log(`   ${detection.hasGpu ? kleur.green("✓") : kleur.red("✗")} NVIDIA GPU`);
+    console.log(`   ${detection.hasDocker ? kleur.green("✓") : kleur.red("✗")} Docker`);
+    console.log(`   ${detection.hasFfmpeg ? kleur.green("✓") : kleur.red("✗")} ffmpeg`);
+    console.log(`   ${detection.hasCloudKey ? kleur.green("✓") : kleur.red("✗")} REPLICATE_API_TOKEN`);
+    console.log(`   ${detection.localBackendsReachable === 6 ? kleur.green("✓") : kleur.red("✗")} Local backends (${detection.localBackendsReachable}/6 reachable)`);
+    console.log("");
+    console.log(kleur.bold("Resolved mode: ") + kleur.cyan(mode));
+    console.log(kleur.gray("   " + detection.recommendedReason));
+    console.log("");
+    console.log(kleur.bold("Per-stage routing:"));
+    for (const [stage, route] of Object.entries(routing)) {
+      const color = route === "cloud" ? kleur.cyan : route === "local" ? kleur.magenta : route === "lite" ? kleur.green : kleur.gray;
+      console.log(`   ${stage.padEnd(11)} → ${color(route)}`);
+    }
+    if (opts.apply) {
+      writeConfig({ mode });
+      invalidateRoutingCache();
+      console.log("");
+      console.log(kleur.green("✓ ") + `mode=${mode} written to ~/.vzt-video-intel/config.json`);
+    }
+  });
+
+program
+  .command("config [action] [keyValue]")
+  .description("Show or edit persisted config. `vintel config` (show), `vintel config set mode=cloud`")
+  .action(async (action: string | undefined, keyValue: string | undefined) => {
+    if (!action || action === "show") {
+      const cfg = readConfig();
+      const redacted = { ...cfg, replicateToken: cfg.replicateToken ? "***" + cfg.replicateToken.slice(-4) : undefined };
+      console.log(JSON.stringify(redacted, null, 2));
+      return;
+    }
+    if (action === "set" && keyValue) {
+      const [key, ...rest] = keyValue.split("=");
+      const value = rest.join("=");
+      if (!key || value === undefined) {
+        console.error("usage: vintel config set <key>=<value>");
+        process.exit(1);
+      }
+      const allowedKeys = ["mode", "cloudProvider", "replicateToken", "muxBase"];
+      if (!allowedKeys.includes(key)) {
+        console.error(`unknown key: ${key}. allowed: ${allowedKeys.join(", ")}`);
+        process.exit(1);
+      }
+      writeConfig({ [key]: value });
+      invalidateRoutingCache();
+      console.log(kleur.green("✓ ") + `${key} updated`);
+      return;
+    }
+    console.error("usage: vintel config | vintel config set <key>=<value>");
+    process.exit(1);
+  });
+
+program
+  .command("login [token]")
+  .description("Store a Replicate API token to ~/.vzt-video-intel/config.json")
+  .action(async (tokenArg: string | undefined) => {
+    let token = tokenArg;
+    if (!token) {
+      token = await prompt("Paste your Replicate API token: ");
+    }
+    if (!token) {
+      console.error(kleur.red("✖ ") + "no token provided");
+      process.exit(1);
+    }
+    writeConfig({ replicateToken: token, mode: readConfig().mode ?? "cloud" });
+    invalidateRoutingCache();
+    console.log(kleur.green("✓ ") + "Token saved. Mode set to cloud (if it wasn't already).");
+    console.log(kleur.gray("   Get a token at https://replicate.com/account/api-tokens"));
   });
 
 program
