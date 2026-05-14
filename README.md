@@ -82,28 +82,20 @@ That's the whole product.
 
 ## Just give me a video
 
-You need **Node 20+** and `git`. That's it.
+You need **Node 20+**. That's it.
 
 ```bash
-git clone https://github.com/vonzelle-vzt/vzt-video-intel.git
-cd vzt-video-intel && npm install && npm run build
-node bin/vzt-video-intel.js analyze ./demo.mp4
+npm install -g vzt-video-intel
+vintel analyze ./demo.mp4               # first run prompts you to pick a mode
 ```
-
-Or run it straight from GitHub with `npx` — no clone, no global install:
-
-```bash
-npx github:vonzelle-vzt/vzt-video-intel analyze ./demo.mp4
-```
-
-> **Note:** the npm package (`npm install -g vzt-video-intel`) isn't published yet. For now, install from the GitHub repo with either method above. The CLI binary is `vzt-video-intel` (or the `vintel` alias once installed globally).
 
 The CLI auto-detects what's available and picks the best execution path. Two modes ship out of the box:
 
 ### 🪶 Lite mode — free, offline, zero API key
 
 ```bash
-node bin/vzt-video-intel.js analyze ./demo.mp4   # first run prompts you to pick a mode
+npm install -g vzt-video-intel
+vintel analyze ./demo.mp4
 ```
 
 Pure-Node WASM pipeline. **Verified working on a fresh Windows machine with no GPU, no API key:**
@@ -121,8 +113,9 @@ Heavy backends (Qwen-VL action recognition, SAM2 entity tracking) skip gracefull
 ### 🌩 Cloud mode — full pipeline, ~$0.06/min
 
 ```bash
-node bin/vzt-video-intel.js login                            # paste a Replicate token (https://replicate.com/account/api-tokens)
-node bin/vzt-video-intel.js analyze https://example.com/clip.mp4
+npm install -g vzt-video-intel
+vintel login                            # paste a Replicate token (https://replicate.com/account/api-tokens)
+vintel analyze https://example.com/clip.mp4
 ```
 
 Heavy stages (Qwen2.5-VL, SAM2) run on Replicate. Light stages (scenes, keyframes) still run locally via ffmpeg-static — no point spending cloud cycles on them. Works on a fresh MacBook, a Codespace, a Lambda.
@@ -130,11 +123,13 @@ Heavy stages (Qwen2.5-VL, SAM2) run on Replicate. Light stages (scenes, keyframe
 ### Auto — let it pick
 
 ```bash
-node bin/vzt-video-intel.js auto             # prints recommended mode + per-stage routing
-node bin/vzt-video-intel.js auto --apply     # persists the recommendation
+vintel auto                             # prints recommended mode + per-stage routing
+vintel auto --apply                     # persists the recommendation
 ```
 
-`auto` checks for ffmpeg and a Replicate token, then picks the best mode automatically. The first-run wizard runs the same flow interactively the first time you call `analyze`.
+`vintel auto` checks for ffmpeg and a Replicate token, then picks the best mode automatically. The first-run wizard runs the same flow interactively the first time you call `vintel analyze`.
+
+> Prefer not to install globally? `npx vzt-video-intel analyze ./demo.mp4` works too — or clone the repo and run `node bin/vzt-video-intel.js`.
 
 The output schema is **identical** across both modes — only the execution path changes. Scene graphs you produce in lite mode are byte-for-byte compatible with cloud-mode scene graphs (minus the entities/actions arrays when those stages skip).
 
@@ -142,12 +137,11 @@ The output schema is **identical** across both modes — only the execution path
 
 ## Verified end-to-end
 
-Every stage was smoke-tested before tagging v1.2.0. From a fresh checkout on a Windows machine with no GPU, no Replicate token:
+Every stage was smoke-tested before tagging v1.2.0. On a fresh Windows machine with no GPU, no Replicate token:
 
 ```
-$ git clone https://github.com/vonzelle-vzt/vzt-video-intel.git
-$ cd vzt-video-intel && npm install && npm run build
-$ node bin/vzt-video-intel.js auto
+$ npm install -g vzt-video-intel
+$ vintel auto
 
 Environment:
    ✓ ffmpeg
@@ -164,7 +158,7 @@ Per-stage routing:
    entities    → skip
    actions     → skip
 
-$ node bin/vzt-video-intel.js analyze ./demo.mp4
+$ vintel analyze ./demo.mp4
 {
   "source": "./demo.mp4",
   "duration_ms": 12000,
@@ -252,8 +246,6 @@ All commands accept `--help` for full option lists.
 
 ### Examples
 
-> `vintel` below is shorthand. Until the npm package is published, run it as `node bin/vzt-video-intel.js`. After a global install (`npm link` or, later, `npm install -g`), `vintel` works directly.
-
 ```bash
 # Full pipeline, skip the expensive entity tracking and action recognition
 vintel analyze ./game.mp4 --no-entities --no-actions
@@ -330,7 +322,7 @@ Per-backend clients are also exported — see `src/backends/*` and [docs/SCHEMA.
 ## Five things that make this different
 
 1. **Claude-native output schema.** Every element timestamped with `start_ms`/`end_ms`. Every entity has a stable `tracking_id` that survives across scenes. Every OCR region carries a bounding box. Claude can cite by timestamp instead of hallucinating.
-2. **Near-zero install.** `git clone` + `npm install` + `npm run build`, or `npx github:vonzelle-vzt/vzt-video-intel` straight from the repo. No Docker. No Python. No GPU. No C++ compiler.
+2. **Zero install.** `npm install -g vzt-video-intel` then `vintel analyze`. No Docker. No Python. No GPU. No C++ compiler.
 3. **Two modes, same output.** Lite (free, offline, WASM) and cloud (Replicate, $0.06/min). The JSON schema is identical — your downstream code doesn't care which one ran.
 4. **CLI + MCP duality.** Same engine ships as a shell-friendly CLI **and** as an MCP server for AI IDEs. One install, both modes.
 5. **Smoke-tested end-to-end.** All 6 stages verified working on a fresh Windows machine with no GPU, no API key. The release notes name the three bugs we caught and fixed before tagging.
