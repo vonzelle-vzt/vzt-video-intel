@@ -12,11 +12,11 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/Status-v1.3.0-purple.svg" alt="v1.3.0">
+  <img src="https://img.shields.io/badge/Status-v1.4.0-purple.svg" alt="v1.4.0">
   <img src="https://img.shields.io/badge/MCP-server-orange.svg" alt="MCP server">
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
   <img src="https://img.shields.io/badge/Modes-cloud%20%2B%20lite-green.svg" alt="cloud + lite">
-  <img src="https://img.shields.io/badge/Smoke%20test-11%2F11%20%2B%20E2E-success.svg" alt="smoke tested">
+  <img src="https://img.shields.io/badge/Smoke%20test-13%2F13%20%2B%20E2E-success.svg" alt="smoke tested">
   <img src="https://img.shields.io/badge/Node-%3E%3D%2020-brightgreen.svg" alt="Node 20+">
 </p>
 
@@ -24,14 +24,14 @@
 
 ## The gap
 
-Claude Opus 4.7 is the best reasoning model in production. **It also cannot watch a video.** No native ingest. No audio. No frames. Not in May 2026.
+Reasoning models are getting eyes — slowly. But "can watch a video" is not the same as "has the video indexed." Even when a model ingests video natively, that ingest is **stateless and per-call**: you re-send the whole clip for every question, you get back opaque inference, and you can't cite a frame. It's the same reason you still embed and index documents even though models can read text.
 
-Every existing "give Claude video" workaround sits at one of two poles:
+Every "give Claude video" workaround sits at one of two poles:
 
-- **Closed-box native models** — Gemini 3.1, Twelve Labs Pegasus, GPT-5.5 video. You hand them a clip; they hand you opaque inference. You can't audit, can't cite frames. And at scale they cost $2–4 / hour of video.
-- **Primitive wrappers** — yt-dlp + Whisper + ffmpeg. You get a transcript. That's it. No scene graph. No entity tracking. No moment search. No timestamps Claude can cite.
+- **Closed-box native models** — Gemini 3.1, Twelve Labs Pegasus, GPT-5.5 video. Hand them a clip, get opaque inference. You can't audit it, can't cite frames, and you pay again every time you ask.
+- **Primitive wrappers** — yt-dlp + Whisper + ffmpeg. You get a transcript. That's it. No scene graph, no entity tracking, no moment search, no timestamps to cite.
 
-VZT Video-Intel is the missing middle: a **runs-anywhere pipeline** that produces a **temporal scene graph** — structured JSON every element of which Claude can quote by timestamp. One install. CLI and MCP server. Same engine. Works on a fresh Mac with no Docker.
+VZT Video-Intel is the missing middle — and the middle is a **persistent index layer**, not a temporary gap-filler. It produces a **temporal scene graph**: structured JSON, every element citable by timestamp, written to a local store. **Analyze once, query forever** — re-analyzing a video is an instant cache read, and every `observe` / `search` / `chapters` call reuses it for free. One install. CLI and MCP server. Runs anywhere, no Docker.
 
 ---
 
@@ -65,7 +65,7 @@ Hand `vintel analyze ./your-clip.mp4` any video and back comes:
   "actions":   [{ "scene_id": 1, "start_ms": 5400, "end_ms": 7200, "label": "pointing at chart", "confidence": 0.87 }],
   "ocr":       [{ "start_ms": 0, "end_ms": 4200, "text": "LIVE • Q3 EARNINGS", "bbox": [40, 20, 320, 60] }],
   "keyframes": [{ "scene_id": 0, "t_ms": 2100, "jpeg_b64": "..." }],
-  "_version":  "1.3.0",
+  "_version":  "1.4.0",
   "_generated_at": "2026-05-14T22:14:08.901Z"
 }
 ```
@@ -137,7 +137,7 @@ The output schema is **identical** across both modes — only the execution path
 
 ## Verified end-to-end
 
-Every stage was smoke-tested before tagging v1.3.0. On a fresh Windows machine with no GPU, no Replicate token:
+Every stage was smoke-tested before tagging v1.4.0. On a fresh Windows machine with no GPU, no Replicate token:
 
 ```
 $ npm install -g vzt-video-intel
@@ -168,7 +168,7 @@ $ vintel analyze ./demo.mp4
   "keyframes": [{ "scene_id": 0, "t_ms": 4000, "width": 320, "height": 240, "jpeg_b64": "..." }, ...],
   "entities": [],
   "actions": [],
-  "_version": "1.3.0"
+  "_version": "1.4.0"
 }
 
 real    0m4.620s
@@ -180,16 +180,19 @@ See [CHANGELOG.md](CHANGELOG.md) for the bugs caught + fixed during smoke testin
 
 ---
 
-## The cost math (vs Gemini 3.1 native video)
+## The cost math — per video, not per question
 
-| Provider | Pricing | 1 hour | 100 hours | 1,000 hours |
-|---|---|---|---|---|
-| **Gemini 3.1 native video** | ~$0.0003 / input token, ~13 tok/sec | ~$2.80 | ~$280 | ~$2,800 |
-| **Twelve Labs Pegasus** | flat per-clip + indexing | ~$3.50 | ~$350 | ~$3,500 |
-| **VZT Video-Intel — cloud mode** | Replicate per-second | ~$3.60 | ~$360 | ~$3,600 |
-| **VZT Video-Intel — lite mode** | $0 — runs on your CPU | $0 | $0 | $0 |
+Native video APIs charge **per question**: every time you ask about a video, the whole clip is re-ingested and re-billed. VZT Video-Intel charges **per video, once** — analyze it, and every subsequent query reads the cached scene graph for $0.
 
-Cloud mode is comparable to native APIs but Claude-citable. Lite mode is free. For ultra-high volume (10k+ hours/month) the Replicate metering scales linearly — same range as Gemini.
+Say you ask 10 questions about a 1-hour video:
+
+| Approach | Analyze | 10 queries | Total |
+|---|---|---|---|
+| **Gemini 3.1 native** | — | re-ingests the hour each time, ~$2.80 × 10 | **~$28** |
+| **VZT Video-Intel — cloud mode** | ~$3.60 once | cached scene graph, $0 each | **~$3.60** |
+| **VZT Video-Intel — lite mode** | $0 (your CPU) | cached scene graph, $0 each | **$0** |
+
+The structured output is the point: lite mode is free and offline, and *every* mode hands you a Claude-citable graph you analyze once and query forever. The more you interrogate a video, the wider the gap.
 
 ---
 
@@ -239,6 +242,7 @@ vintel <command> [options]    # vzt-video-intel also works
 
   auto [--apply]               detect environment + recommend the best mode
   config [show|set k=v]        show or edit persisted config
+  cache [list|clear|path]      inspect the persistent scene-graph store
   login [token]                store a Replicate API token
   mcp                          run as MCP stdio server (for Claude Code, Cursor, OpenCode)
 ```
@@ -253,6 +257,10 @@ vintel analyze ./game.mp4 --no-entities --no-actions
 
 # Watch AND listen — one timeline fusing speech, visuals, on-screen text + scenes
 vintel observe ./talk.mp4 --format=text
+
+# Re-analyzing is instant — the scene graph is cached. --refresh forces a re-run.
+vintel analyze ./game.mp4            # second call returns from the cache
+vintel cache                         # list cached scene graphs
 
 # Transcribe only, Spanish hint
 vintel transcribe ./meeting.m4a --language=es
@@ -324,13 +332,14 @@ Per-backend clients are also exported — see `src/backends/*` and [docs/SCHEMA.
 
 ---
 
-## Five things that make this different
+## Six things that make this different
 
 1. **Claude-native output schema.** Every element timestamped with `start_ms`/`end_ms`. Every entity has a stable `tracking_id` that survives across scenes. Every OCR region carries a bounding box. Claude can cite by timestamp instead of hallucinating.
-2. **Zero install.** `npm install -g vzt-video-intel` then `vintel analyze`. No Docker. No Python. No GPU. No C++ compiler.
-3. **Two modes, same output.** Lite (free, offline, WASM) and cloud (Replicate, $0.06/min). The JSON schema is identical — your downstream code doesn't care which one ran.
-4. **CLI + MCP duality.** Same engine ships as a shell-friendly CLI **and** as an MCP server for AI IDEs. One install, both modes.
-5. **Smoke-tested end-to-end.** Every stage verified working on a fresh Windows machine with no GPU, no API key — 11/11 automated tests plus a real `observe` run on the bundled fixture. The release notes name the bugs we caught and fixed before tagging.
+2. **Analyze once, query forever.** Every scene graph is written to a local content-addressed store. Re-analyzing the same video is an instant cache read; `observe`, `search`, and `chapters` all reuse it. You pay — in time or cloud cost — per *video*, not per *question*.
+3. **Zero install.** `npm install -g vzt-video-intel` then `vintel analyze`. No Docker. No Python. No GPU. No C++ compiler.
+4. **Two modes, same output.** Lite (free, offline, WASM) and cloud (Replicate, $0.06/min). The JSON schema is identical — your downstream code doesn't care which one ran.
+5. **CLI + MCP duality.** Same engine ships as a shell-friendly CLI **and** as an MCP server for AI IDEs. One install, both modes.
+6. **Smoke-tested end-to-end.** Every stage verified working on a fresh Windows machine with no GPU, no API key — 13/13 automated tests plus a real `observe` run on the bundled fixture. The release notes name the bugs we caught and fixed before tagging.
 
 ---
 
@@ -399,6 +408,12 @@ Yes. The lite transcriber windows audio into 30s passes internally, so a 30-minu
 
 **`analyze` vs `observe`?**
 `analyze` gives you the raw scene graph — separate tracks for transcript, scenes, captions, OCR. `observe` runs `analyze` then *fuses* those into one time-sorted timeline: `hear` (speech), `see` (visuals), `read` (on-screen text), `scene` (cuts). Use `observe` when you want to know what *happens*; use `analyze` when you want the structured tracks to query yourself.
+
+**What happens when Claude can watch video natively?**
+You still want this. Native video ingest is *stateless* — the model re-reads the entire clip on every call, hands you opaque inference, and can't cite a frame. That's the same reason you embed and index documents even though models can read text: a persistent, queryable, diff-able index beats re-ingesting raw bytes every time. VZT Video-Intel *is* that index layer for video — analyze once, store the scene graph, query it forever. Native ingest changes what you do with the graph; it doesn't remove the need for one.
+
+**Where does the scene graph cache live, and how is it keyed?**
+`~/.vzt-video-intel/graphs/<hash>.json`. The key is a hash of the source identity (a local file's path + size + mtime, or the URL), the pipeline-affecting options, the resolved lite/cloud routing, and the schema version — so a cache hit is guaranteed to match what a fresh run would produce. Edit the file and the next run misses cleanly. `vintel cache` lists the store, `vintel cache clear` wipes it, and `--refresh` (CLI) / `refresh: true` (MCP) forces a re-run.
 
 **Is this a wrapper around Gemini / GPT-5.5?**
 No. There's no closed-box API call anywhere in this stack. Lite uses open weights running locally; cloud uses Replicate (which runs open weights — Whisper, Qwen2.5-VL, SAM2, CLIP — on rented GPUs).

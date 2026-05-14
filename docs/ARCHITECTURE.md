@@ -59,6 +59,17 @@ The orchestrator at `src/pipeline/orchestrator.ts`:
 2. **Stage 2**: iterates scenes in chunks of `sceneConcurrency` (default 2). For each scene, fires entity tracking + action recognition in parallel. Wraps with `Promise.allSettled` so a single scene failure doesn't kill the run. Keyframe extraction is also wrapped — a failure there is a warning, not a crash.
 3. **Stage 3**: only runs when the caller explicitly invokes `semantic_search` — it requires CLIP embeddings on every sampled frame which is its own pass.
 
+## Persistent scene-graph cache
+
+`analyzeVideo` is wrapped by a content-addressed disk cache (`src/runtime/graph-cache.ts`) — this is what makes "analyze once, query forever" literally true.
+
+- **Location**: `~/.vzt-video-intel/graphs/<key>.json` (`<configDir>/graphs`, alongside `config.json`).
+- **Key**: a sha256 of the *source identity* + every pipeline-affecting option + the resolved lite/cloud routing + the schema `_version`. The source identity of a local file is `path + size + mtime` (cheap — no full read) so editing the file misses cleanly; a URL is keyed by its string. Because routing is in the key, a lite-mode graph and a cloud-mode graph for the same video never collide.
+- **Flow**: `analyzeVideo` computes the key, returns `readGraph(key)` immediately on a hit, otherwise runs the full pipeline and `writeGraph(key, graph)` before returning. A version bump auto-invalidates every prior entry.
+- **Inheritance**: `observe` calls `analyzeVideo`, so it gets caching for free — its first run on a video is a full pass, subsequent runs read from disk and only re-fuse the perception track.
+- **Escape hatches**: `refresh` bypasses the read (forces a fresh run, still rewrites the cache); `noCache` skips read *and* write entirely. Exposed as `--refresh` / `--no-cache` on the CLI and `refresh` on the `analyze_video` / `observe_video` MCP tools. `vintel cache` lists the store, `vintel cache clear` wipes it, `vintel cache path` prints the dir.
+- Partial graphs (those carrying `_warnings[]`) are cached too — `refresh` is the way to retry a degraded run.
+
 ## `observe` — the fused perception track
 
 `analyze` returns parallel tracks (transcript here, captions there, OCR elsewhere). `observe` (`src/pipeline/observe.ts`) runs `analyze`, then merges all four senses into one time-sorted `PerceptionEvent[]`: `hear` (transcript), `see` (scene captions), `read` (OCR, condensed into stable on-screen lines), `scene` (cut boundaries). The output is a second-by-second script of what a human watching *and* listening would notice — the thing lite mode previously couldn't do at all.

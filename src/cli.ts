@@ -13,6 +13,7 @@
 //   chapters      Chapter generation (cloud Qwen2.5-VL — needs Replicate token)
 //   auto          Detect environment + pick best mode (cloud / lite)
 //   config        Show or set persisted configuration
+//   cache         Inspect / clear the persistent scene-graph store
 //   login         Store cloud API token
 //   mcp           Run as an MCP stdio server (for Claude Code, Cursor, OpenCode)
 
@@ -32,13 +33,14 @@ import { startMcpServer } from "./index.js";
 import { detect, resolveMode } from "./runtime/auto.js";
 import { readConfig, writeConfig, isFirstRun, markFirstRunComplete } from "./runtime/cache.js";
 import { invalidateRoutingCache } from "./runtime/mode.js";
+import { listGraphs, clearGraphs, graphCacheDir } from "./runtime/graph-cache.js";
 import type { Mode } from "./lib/env.js";
 
 const program = new Command();
 program
   .name("vzt-video-intel")
   .description("VZT Video-Intel — temporal scene-graph CLI + MCP server. Gives Claude video understanding.")
-  .version("1.3.0");
+  .version("1.4.0");
 
 function print(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + "\n");
@@ -110,6 +112,8 @@ program
   .option("--mux-urls", "include Mux URLs for timestamp citation")
   .option("-l, --language <iso>", "language hint (e.g. en, es)")
   .option("--max-scenes <n>", "cap scenes returned", (v) => parseInt(v, 10))
+  .option("--refresh", "ignore any cached scene graph and re-run the full pipeline")
+  .option("--no-cache", "skip the persistent graph cache (don't read or write)")
   .action(async (source: string, opts) => {
     await runFirstRunWizardIfNeeded();
     await tryOrHelp(async () => {
@@ -121,6 +125,9 @@ program
         includeMuxUrls: !!opts.muxUrls,
         language: opts.language,
         maxScenes: opts.maxScenes,
+        refresh: !!opts.refresh,
+        noCache: opts.cache === false,
+        onCacheHit: () => console.error(kleur.gray("(from cache — use --refresh to re-run)")),
       });
       print(result);
     });
@@ -133,6 +140,8 @@ program
   .option("--max-scenes <n>", "cap scenes analyzed", (v) => parseInt(v, 10))
   .option("--no-scene-markers", "omit scene-boundary events from the track")
   .option("-f, --format <fmt>", "output format: json | text", "json")
+  .option("--refresh", "ignore any cached scene graph and re-run the full pipeline")
+  .option("--no-cache", "skip the persistent graph cache (don't read or write)")
   .action(async (source: string, opts) => {
     await runFirstRunWizardIfNeeded();
     await tryOrHelp(async () => {
@@ -141,6 +150,9 @@ program
         language: opts.language,
         maxScenes: opts.maxScenes,
         sceneMarkers: opts.sceneMarkers !== false,
+        refresh: !!opts.refresh,
+        noCache: opts.cache === false,
+        onCacheHit: () => console.error(kleur.gray("(from cache — use --refresh to re-run)")),
       });
       if (opts.format === "text") {
         process.stdout.write(renderPerceptionText(result) + "\n");
@@ -266,6 +278,40 @@ program
       return;
     }
     console.error("usage: vintel config | vintel config set <key>=<value>");
+    process.exit(1);
+  });
+
+program
+  .command("cache [action]")
+  .description("Inspect the persistent scene-graph store. `vintel cache` (list), `vintel cache clear`, `vintel cache path`")
+  .action(async (action: string | undefined) => {
+    if (action === "clear") {
+      const n = clearGraphs();
+      console.log(kleur.green("✓ ") + `cleared ${n} cached scene graph${n === 1 ? "" : "s"}`);
+      return;
+    }
+    if (action === "path") {
+      console.log(graphCacheDir());
+      return;
+    }
+    if (!action || action === "list") {
+      const graphs = listGraphs();
+      if (graphs.length === 0) {
+        console.log(kleur.gray("no cached scene graphs yet — run `vintel analyze <source>`"));
+        return;
+      }
+      console.log(
+        kleur.bold(`${graphs.length} cached scene graph${graphs.length === 1 ? "" : "s"} `) +
+          kleur.gray(`(${graphCacheDir()})`),
+      );
+      for (const g of graphs) {
+        const kb = (g.sizeBytes / 1024).toFixed(0);
+        console.log(`   ${kleur.cyan(g.key)}  ${g.source}`);
+        console.log(`   ${kleur.gray(`v${g.version} · ${g.generatedAt} · ${kb} KB`)}`);
+      }
+      return;
+    }
+    console.error("usage: vintel cache | vintel cache clear | vintel cache path");
     process.exit(1);
   });
 

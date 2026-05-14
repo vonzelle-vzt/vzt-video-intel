@@ -11,6 +11,8 @@ import { ocrOverlay } from "../backends/easyocr.js";
 import { trackEntities } from "../backends/sam2.js";
 import { recognizeActions } from "../backends/qwen-vl.js";
 import { loadEnv } from "../lib/env.js";
+import { getRouting } from "../runtime/mode.js";
+import { cacheKey, readGraph, writeGraph } from "../runtime/graph-cache.js";
 import type { SceneGraph, Entity, Action, Keyframe, TranscriptSegment, OcrRegion } from "../schema/types.js";
 
 export interface AnalyzeOptions {
@@ -25,12 +27,47 @@ export interface AnalyzeOptions {
   recognizeActions?: boolean;
   /** Concurrency for per-scene work */
   sceneConcurrency?: number;
+  /** Ignore any cached scene graph and re-run the full pipeline (still rewrites the cache). */
+  refresh?: boolean;
+  /** Skip the persistent graph cache entirely — neither read nor write. */
+  noCache?: boolean;
+  /** Invoked when the result is served from the persistent cache (no pipeline run). */
+  onCacheHit?: () => void;
 }
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 
 export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
   const env = loadEnv();
+
+  // Persistent scene-graph cache — "analyze once, query forever". The key
+  // covers source identity + every pipeline-affecting option + resolved
+  // routing + schema version, so a hit is guaranteed to match what a fresh
+  // run would produce. A changed file (new mtime/size) or a version bump
+  // misses cleanly.
+  let key: string | null = null;
+  if (!opts.noCache) {
+    const { routing } = await getRouting();
+    key = cacheKey({
+      source: opts.source,
+      maxScenes: opts.maxScenes,
+      language: opts.language,
+      includeKeyframes: opts.includeKeyframes,
+      includeMuxUrls: opts.includeMuxUrls,
+      trackEntities: opts.trackEntities,
+      recognizeActions: opts.recognizeActions,
+      routingSignature: JSON.stringify(routing),
+      version: VERSION,
+    });
+    if (!opts.refresh) {
+      const hit = readGraph(key);
+      if (hit) {
+        opts.onCacheHit?.();
+        return hit;
+      }
+    }
+  }
+
   const warnings: string[] = [];
 
   // Stage 1: scenes + transcript + OCR — fully independent, fire in parallel.
@@ -105,7 +142,7 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
     await Promise.allSettled(scenes.slice(i, i + concurrency).map(processScene));
   }
 
-  return {
+  const graph: SceneGraph = {
     source: opts.source,
     duration_ms,
     scenes,
@@ -120,4 +157,10 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
     _generated_at: new Date().toISOString(),
     _version: VERSION,
   };
+
+  // Persist for the next run. Partial graphs (with `_warnings`) are cached
+  // too — `refresh: true` is the escape hatch to retry a degraded run.
+  if (key && !opts.noCache) writeGraph(key, graph);
+
+  return graph;
 }

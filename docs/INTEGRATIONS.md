@@ -71,7 +71,7 @@ Always cite timestamps by `start_ms`/`end_ms` from the returned scene graph.
 ---
 name: video-intel
 description: "Temporal scene-graph extraction for videos"
-version: "1.3.0"
+version: "1.4.0"
 triggers:
   - video
   - clip

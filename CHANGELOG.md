@@ -2,6 +2,35 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.4.0] — 2026-05-14
+
+### Added — analyze once, query forever
+
+Until now `analyze` and `observe` re-ran the entire pipeline on every invocation — even on a video that hadn't changed. v1.4.0 makes the scene graph a *persistent artifact*: analyze a video once, query it forever.
+
+- **Persistent scene-graph store** — `src/runtime/graph-cache.ts`. `analyzeVideo` now writes its result to a content-addressed disk cache at `~/.vzt-video-intel/graphs/<key>.json` and returns instantly on a hit. The key is a sha256 of the source identity (local file: `path + size + mtime`; URL: the string), every pipeline-affecting option, the resolved lite/cloud routing, and the schema `_version` — so a hit is guaranteed to match a fresh run, and a changed file or version bump misses cleanly. `observe` calls `analyzeVideo`, so it inherits the cache for free.
+- **`vintel cache` command** — `cache` (list stored graphs), `cache clear` (wipe the store), `cache path` (print the dir).
+- **`--refresh` / `--no-cache` flags** on `analyze` and `observe` — `--refresh` forces a fresh run (still rewrites the cache); `--no-cache` skips the store entirely. On a cache hit the CLI prints a one-line notice to stderr so piped JSON stays clean.
+- **`refresh` param** on the `analyze_video` and `observe_video` MCP tools.
+
+### Changed — repositioning
+
+The docs were pinned to a *temporary* gap ("Claude can't watch video"). v1.4.0 reframes around the durable one: VZT Video-Intel is the **persistent index layer for video** — which stays true even after native video ingest exists, because native ingest is stateless and per-call.
+
+- README "The gap" rewritten — the missing middle is a *persistent index layer*, not a gap-filler.
+- README cost section replaced — the cloud-vs-Gemini price table is gone; the new framing is **per-video amortization** (native APIs bill per *question*; this bills per *video*, once).
+- New FAQ entries: "What happens when Claude can watch video natively?" and "Where does the scene graph cache live?".
+- `docs/COMPARISON.md` — dropped the weak `Cost / 1,000 hours` row, added a persistence/query-reuse row and a native-ingest section.
+- `docs/ARCHITECTURE.md` — documents the graph-cache layer.
+- `ROADMAP.md` — reframed around the index-layer direction; corpus indexing + cross-video search & entity re-ID is the v2 headline.
+- Scene-graph `_version` bumped to `1.4.0`.
+
+### Verified
+
+- `npm run typecheck` → clean
+- `npm run build` → clean
+- `npm test` → 13/13 pass — includes a new graph-cache unit test (key determinism, read/write/list/clear) and an end-to-end "analyze once, query forever" test that runs the fixture, confirms the second run is a cache hit with an identical payload, and that `refresh` / `noCache` behave as documented.
+
 ## [1.3.0] — 2026-05-14
 
 ### Added — watch + listen

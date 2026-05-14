@@ -14,7 +14,16 @@
 | **No Docker required** | ✅ | ✅ | n/a (API only) | n/a (API only) | ✅ |
 | **No GPU required** | ✅ | ✅ (Replicate runs it) | n/a | n/a | ✅ |
 | **Zero install** | ✅ npm install | ✅ npm install + token | API key only | API key only | manual scripting |
-| **Cost / 1,000 hours** | $0 (your CPU) | ~$3,600 | ~$2,800 | ~$3,500 | ~$0 (no graph) |
+| **Persistent local index (analyze once, query forever)** | ✅ on-disk scene-graph store | ✅ on-disk scene-graph store | ❌ stateless, re-ingests per call | partial (managed index, their infra) | ❌ |
+| **Cost model** | $0 — per video, once | per video, once (~$0.06/min) | **per question** — re-billed every call | per clip + indexing | $0 (no graph) |
+
+## Per video, not per question
+
+The cost line that matters isn't "our cloud vs their cloud" — it's *what you're billed for*. Native video APIs re-ingest and re-bill the whole clip on **every question**. VZT Video-Intel analyzes a video **once**, writes the scene graph to a local store, and every subsequent `analyze` / `observe` / `search` / `chapters` call on that video is an instant cache read for $0. Ask 10 questions about a 1-hour video and a native API bills you ~10×; here you pay once (cloud mode) or nothing at all (lite mode).
+
+## What about native video ingest?
+
+When a reasoning model can watch video directly, this still matters — for the same reason you embed and index documents even though models can read text. Native ingest is **stateless**: opaque inference, no frame citations, the whole clip re-read per call. VZT Video-Intel is the **persistent, queryable, diff-able index layer** underneath it. Native ingest changes what you do with the scene graph; it doesn't remove the need for one.
 
 ## When to use what
 

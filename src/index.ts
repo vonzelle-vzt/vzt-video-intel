@@ -36,11 +36,11 @@ function wrap<T>(fn: (params: T) => Promise<unknown> | unknown) {
 }
 
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "vzt-video-intel", version: "1.3.0" });
+  const server = new McpServer({ name: "vzt-video-intel", version: "1.4.0" });
 
   server.tool(
     "analyze_video",
-    "Run the full Video-Intel pipeline. Returns a structured scene graph: scenes, transcript, entities, actions, OCR, keyframes — every element timestamped (start_ms/end_ms). Optional Mux URLs for moment citation.",
+    "Run the full Video-Intel pipeline. Returns a structured scene graph: scenes, transcript, entities, actions, OCR, keyframes — every element timestamped (start_ms/end_ms). Optional Mux URLs for moment citation. Results are cached on disk keyed by the video + options, so re-analyzing the same video is instant — analyze once, query forever.",
     {
       source: z.string().describe("Video file path or URL (mp4, mov, webm, m3u8)"),
       includeKeyframes: z.boolean().default(true),
@@ -49,6 +49,7 @@ export async function startMcpServer(): Promise<void> {
       maxScenes: z.number().int().positive().default(200),
       trackEntities: z.boolean().default(true),
       recognizeActions: z.boolean().default(true),
+      refresh: z.boolean().default(false).describe("Ignore any cached scene graph and re-run the full pipeline"),
     },
     wrap(analyzeVideo),
   );
@@ -61,6 +62,7 @@ export async function startMcpServer(): Promise<void> {
       language: z.string().optional().describe("ISO 639-1 hint"),
       maxScenes: z.number().int().positive().default(200),
       sceneMarkers: z.boolean().default(true).describe("Include scene-boundary events in the track"),
+      refresh: z.boolean().default(false).describe("Ignore any cached scene graph and re-run the full pipeline"),
     },
     wrap(observeVideo),
   );

@@ -25,6 +25,12 @@ export interface ObserveOptions {
   sceneMarkers?: boolean;
   /** Drop OCR words below this confidence before merging (default 0.5). */
   ocrMinConfidence?: number;
+  /** Ignore any cached scene graph and re-run the full pipeline. */
+  refresh?: boolean;
+  /** Skip the persistent graph cache entirely — neither read nor write. */
+  noCache?: boolean;
+  /** Invoked when the underlying analyze is served from the persistent cache. */
+  onCacheHit?: () => void;
 }
 
 export interface ObserveResult extends SceneGraph {
@@ -81,6 +87,9 @@ export async function observeVideo(opts: ObserveOptions): Promise<ObserveResult>
     includeKeyframes: false, // perception track doesn't need base64 blobs
     trackEntities: false,    // no lite SAM2 path; skip the overhead
     recognizeActions: true,  // this is the "watch" half — keep it on
+    refresh: opts.refresh,
+    noCache: opts.noCache,
+    onCacheHit: opts.onCacheHit,
   });
 
   const perception: PerceptionEvent[] = [];
