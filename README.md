@@ -1,12 +1,13 @@
 <p align="center">
-  <img src="assets/banner.png" alt="VZT Video-Intel — AI-native temporal scene-graph for video" width="100%">
+  <img src="assets/banner.png" alt="VZT Video-Intel — Self-Hosted Video Intelligence Pipeline. The missing middle between raw video and reasoning models." width="100%">
 </p>
 
 <h1 align="center">VZT Video-Intel</h1>
 
 <p align="center">
-  <strong>The video understanding layer Claude doesn't have yet.</strong><br>
-  Self-hosted, structured, citable. 10× cheaper than Gemini native video.
+  <strong>The missing middle between raw video and reasoning models.</strong><br>
+  Turn video into structured intelligence. <em>Citable. Queryable. AI-ready.</em><br>
+  Self-hosted, 10× cheaper than Gemini native video.
 </p>
 
 <p align="center">
