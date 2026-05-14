@@ -9,6 +9,8 @@ dist/
 test/fixtures/*.mp4
 test/fixtures/*.mov
 test/fixtures/*.webm
+# …but the canonical smoke-test fixture must be tracked — tests need it in CI
+!test/fixtures/sample.mp4
 tmp/
 *.tsbuildinfo
 eng.traineddata
