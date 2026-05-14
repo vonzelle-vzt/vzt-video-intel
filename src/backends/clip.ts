@@ -1,5 +1,3 @@
-import { loadEnv } from "../lib/env.js";
-import { postRun } from "../lib/http.js";
 import { resolveStage } from "../runtime/mode.js";
 
 export interface ClipSearchOptions {
@@ -21,9 +19,6 @@ export async function semanticSearch(opts: ClipSearchOptions): Promise<{ hits: C
     const { cloudSemanticSearch } = await import("./cloud/clip.js");
     return cloudSemanticSearch(opts);
   }
-  if (route === "lite") {
-    const { liteSemanticSearch } = await import("./lite/clip-onnx.js");
-    return liteSemanticSearch(opts);
-  }
-  return postRun(loadEnv().clip, opts as unknown as Record<string, unknown>);
+  const { liteSemanticSearch } = await import("./lite/clip-onnx.js");
+  return liteSemanticSearch(opts);
 }

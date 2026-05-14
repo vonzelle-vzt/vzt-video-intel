@@ -13,17 +13,14 @@ How to wire VZT Video-Intel into the AI tools you already use.
       "command": "npx",
       "args": ["vzt-video-intel", "mcp"],
       "env": {
-        "WHISPERX_URL": "http://localhost:9010",
-        "QWEN_VL_URL": "http://localhost:9011",
-        "SAM2_URL": "http://localhost:9012",
-        "SCENEDETECT_URL": "http://localhost:9013",
-        "EASYOCR_URL": "http://localhost:9014",
-        "CLIP_URL": "http://localhost:9015"
+        "REPLICATE_API_TOKEN": "r8_..."
       }
     }
   }
 }
 ```
+
+Set `REPLICATE_API_TOKEN` to enable cloud-mode adapters for heavy stages. Omit it to run in lite mode (free, offline, skips entities + actions).
 
 ### Option 2 — project-local `.mcp.json`
 
@@ -74,7 +71,7 @@ Always cite timestamps by `start_ms`/`end_ms` from the returned scene graph.
 ---
 name: video-intel
 description: "Temporal scene-graph extraction for videos"
-version: "1.0.0"
+version: "1.2.0"
 triggers:
   - video
   - clip
@@ -104,25 +101,18 @@ When a video file path or URL appears in your task, call analyze_video
 and reason over the returned scene graph. Cite specific moments by timestamp.
 ```
 
-## Raw curl
+## Programmatic (Node)
 
-Each backend speaks plain JSON over HTTP. No SDK needed:
+```ts
+import { analyzeVideo } from "vzt-video-intel/pipeline/orchestrator";
+import { semanticSearch } from "vzt-video-intel/backends/clip";
 
-```bash
-# Transcribe
-curl -X POST http://localhost:9010/run \
-  -H 'content-type: application/json' \
-  -d '{"source":"https://example.com/clip.mp4","diarize":true}' | jq
+// Mode is resolved automatically from ~/.vzt-video-intel/config.json or
+// from the VZT_MODE env var. Set VZT_MODE=cloud + REPLICATE_API_TOKEN to
+// force cloud mode regardless of persisted config.
 
-# Scene boundaries
-curl -X POST http://localhost:9013/run \
-  -H 'content-type: application/json' \
-  -d '{"source":"./clip.mp4"}' | jq '.scenes'
-
-# CLIP semantic search
-curl -X POST http://localhost:9015/run \
-  -H 'content-type: application/json' \
-  -d '{"source":"./clip.mp4","query":"person waving at camera","topK":5}'
+const graph = await analyzeVideo({ source: "./game.mp4", trackEntities: true });
+const goals = await semanticSearch({ source: "./game.mp4", query: "ball crossing goal line", topK: 20 });
 ```
 
 ## NextPlay (sports film analysis)
@@ -145,18 +135,19 @@ const highlights = goals.hits.map((hit) => {
 ```ts
 import { generateChapters } from "vzt-video-intel/backends/qwen-vl";
 
+// Requires cloud mode (Qwen2.5-VL doesn't run on CPU WASM)
 const chapters = await generateChapters({
   source: thesisVideo.mp4Url,
   targetChapterCount: 10,
   style: "course",
 });
-// → markdown chapters with start_ms for direct timestamping in the Discord post
 ```
 
 ## TX3 / call recordings
 
 ```bash
+# Lite mode: free, offline transcription
 vintel transcribe ./call.m4a | \
-  jq '.segments[] | select(.speaker == "SPEAKER_01") | "\(.start_ms): \(.text)"' \
-  > rep-only-transcript.txt
+  jq '.segments[] | "\(.start_ms): \(.text)"' \
+  > transcript.txt
 ```

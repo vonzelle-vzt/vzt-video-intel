@@ -1,7 +1,7 @@
 {
   "name": "vzt-video-intel",
-  "version": "1.1.1",
-  "description": "VZT Video-Intel — temporal scene-graph MCP + CLI that gives Claude video understanding. Self-hosted, structured JSON output, 10x cheaper than Gemini native video.",
+  "version": "1.2.0",
+  "description": "VZT Video-Intel — temporal scene-graph MCP + CLI that gives Claude video understanding. Zero install. No Docker. No GPU. Lite mode (free, offline WASM) or cloud mode (Replicate).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +14,7 @@
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "start:mcp": "node dist/cli.js mcp",
-    "doctor": "node dist/cli.js doctor",
+    "auto": "node dist/cli.js auto",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx test/smoke.test.ts"
@@ -26,7 +26,6 @@
     "assets",
     "docs",
     "examples",
-    "docker",
     "README.md",
     "LICENSE"
   ],

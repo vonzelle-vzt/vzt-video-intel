@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // VZT Video-Intel — MCP server entry point.
 //
-// Boots the stdio MCP server with all 8 tools backed by the orchestrator and
+// Boots the stdio MCP server with 8 tools backed by the orchestrator and
 // per-backend clients. Designed to be called via the CLI (`vzt-video-intel mcp`)
 // or directly by an MCP host (Claude Code, Cursor, OpenCode).
 
@@ -16,7 +16,6 @@ import { trackEntities } from "./backends/sam2.js";
 import { ocrOverlay } from "./backends/easyocr.js";
 import { semanticSearch } from "./backends/clip.js";
 import { generateChapters } from "./backends/qwen-vl.js";
-import { verifyBackends } from "./lib/verify-backends.js";
 
 function wrap<T>(fn: (params: T) => Promise<unknown> | unknown) {
   return async (params: T) => {
@@ -24,8 +23,8 @@ function wrap<T>(fn: (params: T) => Promise<unknown> | unknown) {
       return { content: [{ type: "text" as const, text: JSON.stringify(await fn(params), null, 2) }] };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const hint = message.includes("ECONNREFUSED") || message.includes("fetch failed")
-        ? " — backend appears offline. Run `vzt-video-intel doctor` to diagnose, or `vzt-video-intel up` to boot the docker stack."
+      const hint = message.includes("REPLICATE_API_TOKEN")
+        ? " — run `vintel login` to add a token, or `vintel config set mode=lite` for free offline mode."
         : "";
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ error: message + hint }) }],
@@ -36,7 +35,7 @@ function wrap<T>(fn: (params: T) => Promise<unknown> | unknown) {
 }
 
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "vzt-video-intel", version: "1.0.0" });
+  const server = new McpServer({ name: "vzt-video-intel", version: "1.2.0" });
 
   server.tool(
     "analyze_video",
@@ -134,14 +133,6 @@ export async function startMcpServer(): Promise<void> {
       style: z.enum(["youtube", "course", "highlights", "meeting"]).default("youtube"),
     },
     wrap(generateChapters),
-  );
-
-  // Bonus: doctor tool so MCP clients can self-diagnose
-  server.tool(
-    "doctor",
-    "Verify all 6 backend services are reachable. Returns a per-backend health report. Use this to diagnose pipeline failures before opening a bug.",
-    {},
-    wrap(verifyBackends),
   );
 
   const transport = new StdioServerTransport();

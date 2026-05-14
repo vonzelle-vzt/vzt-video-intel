@@ -7,50 +7,49 @@ The whole point of VZT Video-Intel is to produce a **temporal scene graph** that
 ```
 Stage 1 (parallel, fully independent)
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ PySceneDetect│  │ WhisperX     │  │ EasyOCR      │
-│ scene bounds │  │ transcript + │  │ on-screen    │
-│              │  │ diarization  │  │ text         │
+│ ffmpeg       │  │ Whisper      │  │ Tesseract /  │
+│ scene bounds │  │ transcript   │  │ cloud OCR    │
 └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
        │                 │                 │
        └────────┬────────┴─────────────────┘
                 ▼
 Stage 2 (per-scene, parallel within concurrency budget)
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ SAM2         │  │ Qwen2.5-VL   │  │ keyframe     │
-│ entity track │  │ action       │  │ extraction   │
-│              │  │ recognition  │  │              │
+│ SAM2 cloud   │  │ Qwen2.5-VL   │  │ ffmpeg       │
+│ entity track │  │ actions      │  │ keyframes    │
 └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
        └────────┬────────┴─────────────────┘
                 ▼
 Stage 3 (on demand)
 ┌──────────────────┐
-│ CLIP semantic    │
-│ search           │
+│ CLIP             │
+│ moment search    │
 └──────────────────┘
                 ▼
             Scene Graph
 ```
 
-## Why six models specifically
+## Why these models specifically
 
-| Backend | Role | Why this one |
-|---|---|---|
-| **WhisperX** | Transcript + diarization | Whisper large-v3 is SOTA on open-source ASR (5.26% WER). WhisperX adds Pyannote 3.1 diarization without leaving the same process. |
-| **PySceneDetect** | Scene boundaries | Content-aware detection is faster and more accurate than ffmpeg's `select=gt(scene,X)` for editorial-cut videos. CPU-only, runs in seconds. |
-| **EasyOCR** | On-screen text | Multilingual out of the box. Better than Tesseract on video frames. CPU-friendly. |
-| **SAM2** | Entity segmentation + tracking | Meta's SAM2 is the only model that does video segmentation with stable IDs across frames. Closest competitor: DEVA. |
-| **Qwen2.5-VL** | Action recognition + chapters | Best open-source VLM in 2026. 72.2 MMMU. Runs in vLLM at production speeds. We default to 7B; 72B is a compose profile. |
-| **CLIP** (OpenCLIP ViT-L-14) | Semantic frame search | The most cost-effective way to do "find me the moment when X happens" — embed query + frames, cosine similarity. |
+| Stage | Lite | Cloud | Why this combo |
+|---|---|---|---|
+| Transcript | Whisper-tiny.en (WASM, 39 MB) | incredibly-fast-whisper | Lite gets ~95% of the quality at 0% of the cost. Cloud is faster for long-form content. |
+| Scenes | ffmpeg-static `select=gt(scene)` | (lite always) | CPU-light, sub-second on short clips. No GPU value-add. |
+| OCR | Tesseract.js (WASM) | cloud OCR equivalent | Lite handles 95% of overlay text accurately. Cloud is better for dense text or non-Latin scripts. |
+| Entities | (skipped) | SAM2 video | SAM2 is the only model that does video segmentation with stable IDs. Too heavy for CPU WASM. |
+| Actions | (skipped) | Qwen2.5-VL | Best open-source VLM. 72.2 MMMU. Too heavy for CPU. |
+| Search | CLIP ViT-B/32 (ONNX) | CLIP-features | Both run the same model class; lite via @xenova/transformers, cloud at scale. |
 
-## Why HTTP between models
+## Why two modes (lite + cloud) instead of three
 
-Each backend has different CUDA versions, Python deps, model weights, and GPU requirements. Putting them behind FastAPI:
+v1.0–v1.1 shipped a third "local" mode — six FastAPI services in a docker-compose stack for users with their own GPUs. **We dropped it in v1.2.0.**
 
-- **Isolation** — upgrade WhisperX without rebuilding the Qwen-VL image
-- **Distribution** — run them on different machines (one box for SAM2 + Qwen, another for transcript)
-- **Swappability** — point `WHISPERX_URL` at a different transcription server without touching the orchestrator
+Reasons:
+- The cloud + lite combo covers 99% of real use cases. Cloud for "full quality, pay per use". Lite for "free, offline, good enough".
+- The docker stack added a ton of install friction: 6 images, ~30 GB total, CUDA toolkit, NVIDIA Container Toolkit. For most users that was a much bigger ask than "paste a Replicate token".
+- Anyone genuinely doing >1k hours/month and wanting to self-host can run Replicate's `cog` templates on their own GPUs directly (Replicate publishes all of them).
 
-The cost is a few milliseconds of HTTP overhead per call, dwarfed by GPU inference time.
+The dispatcher architecture still supports adding a "local" provider — it's just not shipped by default.
 
 ## Concurrency model
 
@@ -60,21 +59,18 @@ The orchestrator at `src/pipeline/orchestrator.ts`:
 2. **Stage 2**: iterates scenes in chunks of `sceneConcurrency` (default 2). For each scene, fires entity tracking + action recognition in parallel. Wraps with `Promise.allSettled` so a single scene failure doesn't kill the run.
 3. **Stage 3**: only runs when the caller explicitly invokes `semantic_search` — it requires CLIP embeddings on every sampled frame which is its own pass.
 
-On a 10-minute clip with default settings on a 4090, expected wall-clock:
-- Stage 1: ~2 min (WhisperX dominates)
-- Stage 2: ~6 min (action recognition is the expensive stage)
-- Total: ~8 min ≈ 0.8× real time
+Wall-clock for a 10-minute clip:
+- **Lite mode** on a modern laptop CPU: 3–5 min (Whisper dominates; entities/actions skipped)
+- **Cloud mode** on Replicate: 2–3 min (cold-start dominates; mostly Qwen-VL + SAM2)
 
 ## Long-form strategies
 
-For videos > 30 minutes you have three options:
+For videos > 30 minutes:
 
-1. **`--no-entities --no-actions`** — drop the two expensive stages, keep transcript + scenes + OCR + keyframes + CLIP. Usually 5× faster.
-2. **Chunked processing** — split the video into ~5-minute chunks, run the pipeline per chunk, stitch by offsetting `start_ms`/`end_ms`. Scene IDs are unique per chunk; the orchestrator namespaces them.
+1. **`--no-entities --no-actions`** — drop the two cloud stages, keep transcript + scenes + OCR + keyframes + CLIP. Usually 5× faster + free.
+2. **Chunked processing** — split the video into ~5-minute chunks, run per chunk, stitch by offsetting `start_ms`/`end_ms`. The scene-graph schema supports stitching.
 3. **Pre-filter with CLIP** — for "find specific moments" use cases, run `semantic_search` first to narrow the time window, then `analyze` only that window.
 
 ## Output stability
 
-The scene graph schema is versioned via `_version` on every output. Breaking changes bump the major version (e.g. v2.0 will introduce camera-position tracking). Additive changes ship in minors.
-
-The HTTP contract per backend (`POST /run`) is **stable across orchestrator versions** — you can run an older orchestrator against newer backends.
+The scene graph schema is versioned via `_version` on every output. Breaking changes bump the major version. Additive changes ship in minors. Lite-mode and cloud-mode outputs are byte-for-byte compatible.

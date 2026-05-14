@@ -1,14 +1,14 @@
 // Single source of truth for "which adapter handles this stage right now?"
-// Backend modules call resolveStage() before each call to pick local vs cloud vs lite.
+// Backend modules call resolveStage() before each call to pick lite vs cloud.
 
 import { resolveMode, Routing } from "./auto.js";
 
 export type StageName = "transcribe" | "scenes" | "ocr" | "clip" | "entities" | "actions";
 export type StageRoute = Routing[StageName];
 
-let cached: { routing: Routing; mode: "cloud" | "local" | "lite" } | null = null;
+let cached: { routing: Routing; mode: "cloud" | "lite" } | null = null;
 
-export async function getRouting(): Promise<{ mode: "cloud" | "local" | "lite"; routing: Routing }> {
+export async function getRouting(): Promise<{ mode: "cloud" | "lite"; routing: Routing }> {
   if (cached) return cached;
   const { mode, routing } = await resolveMode();
   cached = { mode, routing };

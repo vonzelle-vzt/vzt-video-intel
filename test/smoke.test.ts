@@ -18,7 +18,7 @@ test("CLI binary prints help", () => {
   assert.equal(result.status, 0, "CLI --help should exit 0");
   assert.match(result.stdout, /vzt-video-intel/);
   assert.match(result.stdout, /analyze/);
-  assert.match(result.stdout, /doctor/);
+  assert.match(result.stdout, /auto/);
   assert.match(result.stdout, /mcp/);
 });
 
@@ -62,7 +62,6 @@ test("Cloud backends import", async () => {
   await import("../src/backends/cloud/sam2.js");
   await import("../src/backends/cloud/clip.js");
   await import("../src/backends/cloud/easyocr.js");
-  await import("../src/backends/cloud/scene-detect.js");
 });
 
 test("Lite backends import", async () => {

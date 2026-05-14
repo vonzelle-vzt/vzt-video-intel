@@ -2,6 +2,47 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.2.0] — 2026-05-14
+
+### Removed — local/Docker mode
+
+v1.0 and v1.1 shipped a six-container docker-compose stack as a third "local mode" for users with their own GPUs. v1.2.0 **deletes it entirely**. Cloud and lite modes cover 99% of real use cases; the docker stack added too much install friction (6 images, ~30 GB total, CUDA toolkit, NVIDIA Container Toolkit) to be the default path. Anyone genuinely doing >1k hours/month on owned hardware can run Replicate's `cog` templates directly.
+
+### Removed
+
+- `docker/` directory (all 14 files: docker-compose.yml + 6 Dockerfiles + 6 server.py + .env.example)
+- `src/lib/verify-backends.ts` — health-checked the docker-compose backends only
+- `src/backends/cloud/scene-detect.ts` — was a thin proxy to the local Docker endpoint; scenes now always run via lite (ffmpeg-static)
+- `docs/SELF-HOSTED.md` — was the local-mode deep dive
+- CLI commands: `vintel up`, `vintel down`, `vintel doctor`, `vintel init` (the docker-stack wizard)
+- MCP server `doctor` tool — backend health-check on the docker stack
+- `Mode = "local"` from the Mode type
+- `local` routing branch from every `src/backends/<x>.ts` dispatcher
+- 6 local backend URL env vars from `src/lib/env.ts` (`WHISPERX_URL`, `QWEN_VL_URL`, etc.)
+- Docker / GPU detection from `src/runtime/auto.ts`
+- `docker` entry from `package.json` `files` array
+
+### Simplified
+
+- `Mode` type: `"cloud" | "local" | "lite" | "auto"` → `"cloud" | "lite" | "auto"`
+- `Routing` type: 3-way → 2-way per stage
+- `vintel auto` output: 5 environment checks → 2 (ffmpeg + cloud token)
+- First-run wizard: 3 options → 2 (cloud / lite)
+- Friendly errors no longer mention Docker
+- README: dropped the "🛠 Local mode" section; FAQ adds "Why drop the Docker self-hosted mode?"
+- docs/INSTALL.md: 3 modes → 2
+- docs/BACKENDS.md: rewritten around the lite + cloud adapter matrix instead of the old FastAPI HTTP contract
+- docs/ARCHITECTURE.md: new "Why two modes instead of three" section documenting the decision
+- docs/COMPARISON.md: added "No Docker required" + "No GPU required" rows
+
+### Verified
+
+- npm run typecheck → clean
+- npm test → 9/9 pass
+- `vintel auto` correctly identifies ffmpeg + token state, recommends cloud or lite
+- No dangling Docker references in src/ except intentional historical mentions in CHANGELOG + ARCHITECTURE
+- Output schema unchanged — scene graphs produced by v1.1.1 and v1.2.0 are byte-for-byte compatible
+
 ## [1.1.1] — 2026-05-14
 
 End-to-end smoke test on a fresh Windows machine (no GPU, no Docker, no cloud

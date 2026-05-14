@@ -7,17 +7,16 @@
 <p align="center">
   <strong>The missing middle between raw video and reasoning models.</strong><br>
   Turn video into structured intelligence. <em>Citable. Queryable. AI-ready.</em><br>
-  Self-hosted, 10× cheaper than Gemini native video.
+  No Docker. No GPU. No Python.
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/Status-v1.1.1-purple.svg" alt="v1.1.1">
-  <img src="https://img.shields.io/badge/Smoke%20test-9%2F9%20%2B%206%20stages%20E2E-success.svg" alt="smoke tested">
+  <img src="https://img.shields.io/badge/Status-v1.2.0-purple.svg" alt="v1.2.0">
   <img src="https://img.shields.io/badge/MCP-server-orange.svg" alt="MCP server">
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
-  <img src="https://img.shields.io/badge/Backends-6-green.svg" alt="6 backends">
-  <img src="https://img.shields.io/badge/Output-structured%20JSON-yellow.svg" alt="structured JSON">
+  <img src="https://img.shields.io/badge/Modes-cloud%20%2B%20lite-green.svg" alt="cloud + lite">
+  <img src="https://img.shields.io/badge/Smoke%20test-9%2F9%20%2B%206%20stages%20E2E-success.svg" alt="smoke tested">
   <img src="https://img.shields.io/badge/Node-%3E%3D%2020-brightgreen.svg" alt="Node 20+">
 </p>
 
@@ -29,16 +28,16 @@ Claude Opus 4.7 is the best reasoning model in production. **It also cannot watc
 
 Every existing "give Claude video" workaround sits at one of two poles:
 
-- **Closed-box native models** — Gemini 3.1, Twelve Labs Pegasus, GPT-5.5 video. You hand them a clip; they hand you opaque inference. You can't audit, can't cite frames, can't self-host. And at scale they cost $2–4 / hour of video.
+- **Closed-box native models** — Gemini 3.1, Twelve Labs Pegasus, GPT-5.5 video. You hand them a clip; they hand you opaque inference. You can't audit, can't cite frames. And at scale they cost $2–4 / hour of video.
 - **Primitive wrappers** — yt-dlp + Whisper + ffmpeg. You get a transcript. That's it. No scene graph. No entity tracking. No moment search. No timestamps Claude can cite.
 
-VZT Video-Intel is the missing middle: a **self-hosted pipeline** that produces a **temporal scene graph** — structured JSON every element of which Claude can quote by timestamp — at roughly **$0.30 / GPU-hour**. **One install. CLI and MCP server. Same engine.**
+VZT Video-Intel is the missing middle: a **runs-anywhere pipeline** that produces a **temporal scene graph** — structured JSON every element of which Claude can quote by timestamp. One install. CLI and MCP server. Same engine. Works on a fresh Mac with no Docker.
 
 ---
 
 ## What you actually get
 
-Hand `vzt-video-intel analyze ./your-clip.mp4` any video and back comes:
+Hand `vintel analyze ./your-clip.mp4` any video and back comes:
 
 ```jsonc
 {
@@ -49,8 +48,8 @@ Hand `vzt-video-intel analyze ./your-clip.mp4` any video and back comes:
     { "id": 1, "start_ms": 4200, "end_ms": 9800,  "shot_type": "medium" }
   ],
   "transcript": [
-    { "speaker": "SPEAKER_00", "start_ms": 120,  "end_ms": 2800, "text": "Welcome back to the show.", "confidence": 0.94 },
-    { "speaker": "SPEAKER_01", "start_ms": 3100, "end_ms": 5400, "text": "Today we're breaking down...",  "confidence": 0.91 }
+    { "start_ms": 120,  "end_ms": 2800, "text": "Welcome back to the show." },
+    { "start_ms": 3100, "end_ms": 5400, "text": "Today we're breaking down..." }
   ],
   "entities": [
     {
@@ -63,11 +62,11 @@ Hand `vzt-video-intel analyze ./your-clip.mp4` any video and back comes:
       ]
     }
   ],
-  "actions":  [{ "scene_id": 1, "start_ms": 5400, "end_ms": 7200, "label": "pointing at chart", "confidence": 0.87 }],
-  "ocr":      [{ "start_ms": 0, "end_ms": 4200, "text": "LIVE • Q3 EARNINGS", "bbox": [40, 20, 320, 60] }],
-  "keyframes":[{ "scene_id": 0, "t_ms": 2100, "jpeg_b64": "..." }],
-  "_pipeline": "whisperx+scenedetect+easyocr+sam2+qwen-vl+clip",
-  "_generated_at": "2026-05-13T22:14:08.901Z"
+  "actions":   [{ "scene_id": 1, "start_ms": 5400, "end_ms": 7200, "label": "pointing at chart", "confidence": 0.87 }],
+  "ocr":       [{ "start_ms": 0, "end_ms": 4200, "text": "LIVE • Q3 EARNINGS", "bbox": [40, 20, 320, 60] }],
+  "keyframes": [{ "scene_id": 0, "t_ms": 2100, "jpeg_b64": "..." }],
+  "_version":  "1.2.0",
+  "_generated_at": "2026-05-14T22:14:08.901Z"
 }
 ```
 
@@ -83,26 +82,18 @@ That's the whole product.
 
 ## Just give me a video
 
-You don't need Docker. You don't need a GPU. You need Node 20+. The CLI auto-detects what's available and picks the best execution path. Three modes ship out of the box:
+You need **Node 20+**. That's it.
 
-### 🌩 Cloud mode — works in 60 seconds anywhere
-
-```bash
-npm install -g vzt-video-intel
-vintel login                            # paste a Replicate token (https://replicate.com/account/api-tokens)
-vintel analyze https://example.com/clip.mp4
-```
-
-Every heavy backend runs on Replicate. ~$0.06/min of video. Zero local infra. Works on a fresh MacBook, a Codespace, a Lambda.
+The CLI auto-detects what's available and picks the best execution path. Two modes ship out of the box:
 
 ### 🪶 Lite mode — free, offline, zero install
 
 ```bash
 npm install -g vzt-video-intel
-vintel analyze ./demo.mp4               # first run prompts you to pick a mode; pick lite
+vintel analyze ./demo.mp4               # first run prompts you to pick a mode
 ```
 
-Pure-Node WASM pipeline. **Verified working on a fresh Windows machine with no GPU, no Docker, no API key:**
+Pure-Node WASM pipeline. **Verified working on a fresh Windows machine with no GPU, no API key:**
 
 | Stage | Backend | Verified |
 |---|---|---|
@@ -112,18 +103,17 @@ Pure-Node WASM pipeline. **Verified working on a fresh Windows machine with no G
 | Keyframes | `ffmpeg-static` | < 1s |
 | Semantic search | `@xenova/transformers` CLIP ViT-B/32 (ONNX) | ~7s for a 12s clip |
 
-Heavy backends (Qwen-VL action recognition, SAM2 entity tracking) skip gracefully — set a Replicate token to enable them, or run local mode for full pipeline self-hosted. No native compilation, no Python, runs on macOS / Linux / Windows identically.
+Heavy backends (Qwen-VL action recognition, SAM2 entity tracking) skip gracefully in lite mode — set a Replicate token to enable them. No native compilation. No Python. Runs on macOS / Linux / Windows identically.
 
-### 🛠 Local mode — 10× cheaper at scale
+### 🌩 Cloud mode — full pipeline, ~$0.06/min
 
 ```bash
-git clone https://github.com/vonzelle-vzt/vzt-video-intel.git
-cd vzt-video-intel && npm install && npm run build
-vintel up                               # boots all 6 backends via docker-compose (needs Docker + GPU)
-vintel analyze ./demo.mp4
+npm install -g vzt-video-intel
+vintel login                            # paste a Replicate token (https://replicate.com/account/api-tokens)
+vintel analyze https://example.com/clip.mp4
 ```
 
-Full self-hosted GPU stack. The power-user mode — boots WhisperX, Qwen2.5-VL, SAM2, PySceneDetect, EasyOCR, CLIP as FastAPI services. About **$0.30 / GPU-hour** vs cloud's $3.50, so it pays for itself the first month at any non-trivial volume.
+Heavy stages (Qwen2.5-VL, SAM2) run on Replicate. Light stages (scenes, keyframes) still run locally via ffmpeg-static — no point spending cloud cycles on them. Works on a fresh MacBook, a Codespace, a Lambda.
 
 ### Auto — let it pick
 
@@ -132,29 +122,26 @@ vintel auto                             # prints recommended mode + per-stage ro
 vintel auto --apply                     # persists the recommendation
 ```
 
-`vintel auto` checks for an NVIDIA GPU, Docker daemon, ffmpeg, a Replicate token, and reachable local backends, then picks the best mode automatically. First-run wizard runs the same flow interactively the first time you call `vintel analyze`.
+`vintel auto` checks for ffmpeg and a Replicate token, then picks the best mode automatically. First-run wizard runs the same flow interactively the first time you call `vintel analyze`.
 
-The output schema is **identical** across all three modes — only the execution path changes. Scene graphs you produced in lite mode are byte-for-byte compatible with cloud-mode scene graphs (minus the entities/actions arrays when those stages are skipped).
+The output schema is **identical** across both modes — only the execution path changes. Scene graphs you produce in lite mode are byte-for-byte compatible with cloud-mode scene graphs (minus the entities/actions arrays when those stages skip).
 
 ---
 
 ## Verified end-to-end
 
-Every stage was smoke-tested before tagging v1.1.1. From a fresh checkout on a Windows machine with no GPU, no Docker, no Replicate token:
+Every stage was smoke-tested before tagging v1.2.0. From a fresh checkout on a Windows machine with no GPU, no Replicate token:
 
 ```
 $ npm install -g vzt-video-intel
 $ vintel auto
 
 Environment:
-   ✗ NVIDIA GPU
-   ✗ Docker
    ✓ ffmpeg
    ✗ REPLICATE_API_TOKEN
-   ✗ Local backends (0/6 reachable)
 
 Resolved mode: lite
-   no GPU, no cloud key, no running backends — falling back to pure-Node lite mode
+   no cloud key — falling back to pure-Node lite mode (free + offline)
 
 Per-stage routing:
    transcribe  → lite
@@ -174,8 +161,7 @@ $ vintel analyze ./demo.mp4
   "keyframes": [{ "scene_id": 0, "t_ms": 4000, "width": 320, "height": 240, "jpeg_b64": "..." }, ...],
   "entities": [],
   "actions": [],
-  "_pipeline": "whisperx+scenedetect+easyocr+sam2+qwen-vl+clip",
-  "_version": "1.0.0"
+  "_version": "1.2.0"
 }
 
 real    0m4.620s
@@ -183,84 +169,69 @@ real    0m4.620s
 
 12-second clip, full lite pipeline, **4.6 seconds wall-clock on CPU**.
 
-The smoke test also caught three bugs that shipped to v1.1.1:
-
-1. **Whisper on Windows** — `nodejs-whisper` needed C++ compilation. Replaced with `@xenova/transformers` for cross-platform WASM transcription.
-2. **OCR language codes** — Tesseract.js uses 3-letter codes (`eng`, not `en`). Added a normalization map.
-3. **CLIP shipped as a stub** — the real implementation was overwritten by a stub during a parallel-write race. Real code now in place.
-
-See [CHANGELOG.md](CHANGELOG.md) for full details.
+See [CHANGELOG.md](CHANGELOG.md) for the bugs caught + fixed during smoke testing.
 
 ---
 
 ## The cost math (vs Gemini 3.1 native video)
 
-| Provider | Pricing model | 1 hour of video | 100 hours | 1,000 hours |
+| Provider | Pricing | 1 hour | 100 hours | 1,000 hours |
 |---|---|---|---|---|
-| **Gemini 3.1 native video** (input tokens) | ~$0.0003 / token, ~13 tok / sec of video | **~$2.80** | ~$280 | ~$2,800 |
+| **Gemini 3.1 native video** | ~$0.0003 / input token, ~13 tok/sec | ~$2.80 | ~$280 | ~$2,800 |
 | **Twelve Labs Pegasus** | flat per-clip + indexing | ~$3.50 | ~$350 | ~$3,500 |
-| **VZT Video-Intel** (own GPU) | $0.30 / GPU-hr (RTX 4090 spot) | **~$0.30** | ~$30 | **~$300** |
-| **VZT Video-Intel** (rented A100) | $1.50 / GPU-hr | ~$1.50 | ~$150 | ~$1,500 |
+| **VZT Video-Intel — cloud mode** | Replicate per-second | ~$3.60 | ~$360 | ~$3,600 |
+| **VZT Video-Intel — lite mode** | $0 — runs on your CPU | $0 | $0 | $0 |
 
-At 1,000 hours of video — what an enterprise sports / media / surveillance team easily burns through monthly — **VZT Video-Intel pays for its own hardware in the first month**. Numbers verified May 2026 against published model pricing.
+Cloud mode is comparable to native APIs but Claude-citable. Lite mode is free. For ultra-high volume (10k+ hours/month) the Replicate metering scales linearly — same range as Gemini.
 
 ---
 
 ## Architecture
 
-Six open-source models behind a single CLI. Each is a separate FastAPI service in the docker-compose stack, called via `POST /run` with a JSON body. Same HTTP contract across all six.
-
 ```mermaid
 flowchart LR
     A[Video file or URL] --> B[CLI / MCP server]
     B --> C[Pipeline orchestrator]
-
-    C --> D[WhisperX :9010<br/>transcript + diarization]
-    C --> E[PySceneDetect :9013<br/>scene boundaries]
-    C --> F[EasyOCR :9014<br/>on-screen text]
-    C --> G[SAM2 :9012<br/>entity segment + track]
-    C --> H[Qwen2.5-VL :9011<br/>actions + chapters]
-    C --> I[CLIP :9015<br/>semantic search]
-
+    C --> D[Whisper<br/>transcription]
+    C --> E[ffmpeg<br/>scenes + keyframes]
+    C --> F[Tesseract / cloud<br/>OCR]
+    C --> G[SAM2 cloud<br/>entity tracking]
+    C --> H[Qwen2.5-VL cloud<br/>actions + chapters]
+    C --> I[CLIP<br/>semantic search]
     D --> J[Scene Graph JSON]
     E --> J
     F --> J
     G --> J
     H --> J
     I --> J
-
     J --> K[Claude / your code]
 ```
 
 **Stage 1** (parallel): scenes + transcript + OCR — fully independent, fire concurrently.
-**Stage 2** (per-scene, parallel): entity tracking + action recognition + keyframe extraction.
+**Stage 2** (per-scene): entity tracking + action recognition + keyframe extraction.
 **Stage 3** (on demand): CLIP semantic search ("find me the moment when X happens").
 
-Long-form videos can run incrementally — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Each stage has a **lite** (pure-Node WASM) and a **cloud** (Replicate) adapter. The orchestrator picks per stage based on the resolved runtime mode — same JSON output either way. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
 ## CLI reference
 
 ```
-vzt-video-intel <command> [options]    # or `vintel` as a shorter alias
+vintel <command> [options]    # vzt-video-intel also works
 
   analyze <source>             full pipeline → scene graph JSON
-  transcribe <source>          WhisperX + diarization
-  scenes <source>              scene boundaries (PySceneDetect)
-  entities <source>            SAM2 entity tracking
+  transcribe <source>          Whisper transcription
+  scenes <source>              scene boundaries (ffmpeg)
+  entities <source>            SAM2 entity tracking (cloud)
   keyframes <source>           per-scene keyframes (base64 JPEG)
-  ocr <source>                 on-screen text (EasyOCR)
+  ocr <source>                 on-screen text
   search <source> <query>      CLIP semantic moment search
-  chapters <source>            Qwen2.5-VL chapter generation
+  chapters <source>            Qwen2.5-VL chapter generation (cloud)
 
   auto [--apply]               detect environment + recommend the best mode
   config [show|set k=v]        show or edit persisted config
   login [token]                store a Replicate API token
-  doctor                       health-check local Docker backends
-  up [--profile cpu|gpu]       boot the docker stack (local mode)
-  down                         stop the docker stack
-  init [--mcp-config]          first-run wizard
   mcp                          run as MCP stdio server (for Claude Code, Cursor, OpenCode)
 ```
 
@@ -275,14 +246,14 @@ vintel analyze ./game.mp4 --no-entities --no-actions
 # Transcribe only, Spanish hint
 vintel transcribe ./meeting.m4a --language=es
 
-# Find the moment the ball crosses the line
+# Find the moment the ball crosses the line (cloud mode for best quality, lite for free)
 vintel search ./highlight.mp4 "ball crossing the goal line" --top-k=5
 
-# YouTube-style chapters
+# YouTube-style chapters (requires Replicate token)
 vintel chapters ./lecture.mp4 --style=course --count=12
 
 # Pipe straight to jq
-vintel transcribe ./call.mp3 | jq '.segments[] | select(.speaker == "SPEAKER_01")'
+vintel transcribe ./call.mp3 | jq '.segments[] | .text'
 ```
 
 ---
@@ -302,19 +273,18 @@ Add to `~/.claude.json` or your project's `.mcp.json`:
 }
 ```
 
-Claude Code restarts the MCP server and exposes all 8 tools:
+Claude Code restarts the MCP server and exposes 8 tools:
 
 | Tool | What it does |
 |---|---|
 | `analyze_video` | Full pipeline; returns the complete scene graph |
-| `extract_transcript` | WhisperX transcription with diarization |
-| `detect_scenes` | PySceneDetect content-aware scene boundaries |
-| `track_entities` | SAM2 segmentation + temporal tracking |
+| `extract_transcript` | Whisper transcription |
+| `detect_scenes` | Content-aware scene boundaries (ffmpeg) |
+| `track_entities` | SAM2 segmentation + temporal tracking (cloud only) |
 | `extract_keyframes` | Representative frames per scene (base64 JPEG) |
-| `ocr_overlay` | EasyOCR text regions with timestamps |
+| `ocr_overlay` | Text regions with timestamps |
 | `semantic_search` | CLIP moment search by natural language |
-| `generate_chapters` | LLM-driven chapter generation |
-| `doctor` | Self-diagnostic — pings all 6 backends |
+| `generate_chapters` | LLM-driven chapter generation (cloud only) |
 
 Then in Claude Code: *"Analyze ./game.mp4 and tell me what happens at the 2-minute mark."* Claude calls `analyze_video`, gets the scene graph, and cites timestamps.
 
@@ -344,11 +314,11 @@ Per-backend clients are also exported — see `src/backends/*` and [docs/SCHEMA.
 
 ## Five things that make this different
 
-1. **Claude-native output schema.** Every element timestamped with `start_ms`/`end_ms`. Every entity has a stable `tracking_id` that survives across scenes. Every OCR region carries a bounding box. Claude can cite by timestamp instead of hallucinating about content.
-2. **Six open-source backends, no closed boxes.** WhisperX, Qwen2.5-VL, SAM2, PySceneDetect, EasyOCR, CLIP. All inspectable. All swappable — see [docs/BACKENDS.md](docs/BACKENDS.md) to drop in Whisper.cpp or BLIP-2 instead.
-3. **10× cheaper at scale.** Self-hosted GPU economics beat the closed video APIs by a factor of ten at any non-trivial volume.
-4. **CLI + MCP duality.** Same engine ships as a shell-friendly CLI **and** as an MCP server for AI IDEs. One install, both modes. The CLI also has `up` / `down` / `doctor` / `init` — managing infrastructure isn't a separate skill.
-5. **Plug-and-play.** Six docker images. One compose file. `up` then `doctor` then `analyze`. The README and CLI errors all point you to the next command — there are no hidden setup steps.
+1. **Claude-native output schema.** Every element timestamped with `start_ms`/`end_ms`. Every entity has a stable `tracking_id` that survives across scenes. Every OCR region carries a bounding box. Claude can cite by timestamp instead of hallucinating.
+2. **Zero install.** `npm install -g vzt-video-intel` then `vintel analyze`. No Docker. No Python. No GPU. No C++ compiler.
+3. **Two modes, same output.** Lite (free, offline, WASM) and cloud (Replicate, $0.06/min). The JSON schema is identical — your downstream code doesn't care which one ran.
+4. **CLI + MCP duality.** Same engine ships as a shell-friendly CLI **and** as an MCP server for AI IDEs. One install, both modes.
+5. **Smoke-tested end-to-end.** All 6 stages verified working on a fresh Windows machine with no GPU, no API key. The release notes name the three bugs we caught and fixed before tagging.
 
 ---
 
@@ -360,24 +330,22 @@ vzt-video-intel/
 ├── src/
 │   ├── index.ts               MCP server (8 tools)
 │   ├── cli.ts                 CLI dispatcher (commander)
-│   ├── backends/              one HTTP client per backend
+│   ├── backends/
+│   │   ├── *.ts               mode-aware dispatchers
+│   │   ├── cloud/             Replicate adapters per stage
+│   │   └── lite/              pure-Node WASM implementations
 │   ├── pipeline/orchestrator  full pipeline coordinator
+│   ├── runtime/               auto-detect, mode resolver, config cache
 │   ├── schema/types.ts        SceneGraph TypeScript types
-│   └── lib/                   env, http, mux, verify-backends
-├── docker/
-│   ├── docker-compose.yml     6-backend stack
-│   ├── whisperx/              + Dockerfile + server.py
-│   ├── qwen-vl/               + Dockerfile + server.py (vLLM)
-│   ├── sam2/                  + Dockerfile + server.py
-│   ├── scenedetect/           + Dockerfile + server.py
-│   ├── easyocr/               + Dockerfile + server.py
-│   └── clip/                  + Dockerfile + server.py
+│   └── lib/                   env, http, mux
 ├── docs/
+│   ├── INSTALL.md
 │   ├── ARCHITECTURE.md
 │   ├── SCHEMA.md
 │   ├── BACKENDS.md
 │   ├── INTEGRATIONS.md
-│   └── COMPARISON.md
+│   ├── COMPARISON.md
+│   └── CLOUD-PROVIDERS.md
 ├── examples/                  basic, transcribe-only, semantic-search, sports, meeting
 ├── test/smoke.test.ts
 ├── .github/workflows/ci.yml
@@ -388,35 +356,37 @@ vzt-video-intel/
 
 ## Documentation
 
-- **[ARCHITECTURE](docs/ARCHITECTURE.md)** — pipeline diagram, why these six models, data flow per stage
+- **[INSTALL](docs/INSTALL.md)** — install for cloud / lite / MCP
+- **[ARCHITECTURE](docs/ARCHITECTURE.md)** — pipeline diagram, why these models, data flow per stage
 - **[SCHEMA](docs/SCHEMA.md)** — every field of the scene graph, with examples
-- **[BACKENDS](docs/BACKENDS.md)** — per-backend HTTP contract, alternative models you can swap in
-- **[INTEGRATIONS](docs/INTEGRATIONS.md)** — Claude Code, Cursor, OpenCode, Factory Droid, raw curl
+- **[BACKENDS](docs/BACKENDS.md)** — per-stage adapters: lite + cloud
+- **[INTEGRATIONS](docs/INTEGRATIONS.md)** — Claude Code, Cursor, OpenCode, Factory Droid
 - **[COMPARISON](docs/COMPARISON.md)** — side-by-side vs Gemini, Pegasus, GPT-5.5 video, OSS wrappers
+- **[CLOUD-PROVIDERS](docs/CLOUD-PROVIDERS.md)** — Replicate adapters + how to add new providers
 - **[ROADMAP](ROADMAP.md)** — incremental processing, action fine-tuning, multi-camera sync
-- **[CONTRIBUTING](CONTRIBUTING.md)** — setup, conventions, adding a new backend
+- **[CONTRIBUTING](CONTRIBUTING.md)** — setup, conventions, adding a new adapter
 
 ---
 
 ## FAQ
 
 **Do I need a GPU?**
-You need one GPU for Qwen2.5-VL, SAM2, and CLIP. WhisperX runs on CPU but ~5× slower. EasyOCR and PySceneDetect are CPU-only. A single RTX 4090 (24 GB) is enough for Qwen2.5-VL-7B; the 72B model wants 2× A100.
+No. Lite mode runs entirely on CPU via WASM. Cloud mode runs heavy stages on Replicate's GPUs (you pay per second). Either way, your local machine doesn't need an NVIDIA card.
 
 **How long does a 10-minute video take?**
-Real-time-ish on a 4090 (~10–12 min). Faster if you `--no-entities --no-actions`. SAM2 + Qwen action recognition are the two expensive stages.
+Lite mode on a modern laptop CPU: ~3–5 minutes. Cloud mode on Replicate: ~2–3 minutes wall-clock (mostly cold-start time on the heavy models).
 
 **Can I run just one backend?**
-Yes. Each backend is independent. Use `vintel transcribe ./x.mp4` and you only need WhisperX up.
+Yes. Each subcommand only uses what it needs. `vintel transcribe ./x.mp4` only loads the transcription backend.
 
-**What about long videos?**
-Stream a video in chunks; the schema supports stitching across chunks via stable scene IDs. See [docs/ARCHITECTURE.md#long-form-strategies](docs/ARCHITECTURE.md).
-
-**Why FastAPI servers? Why not direct Python calls?**
-HTTP isolation. Each model has different CUDA versions, Python deps, model weights. Putting them behind HTTP lets you upgrade one without breaking the others, run them on different machines, swap implementations.
+**What's the difference between lite and cloud mode?**
+Lite mode skips entities + actions (no SAM2 / Qwen-VL on CPU). Cloud mode runs everything. The other 4 stages (transcribe, scenes, OCR, search) are equally accurate in both — lite uses smaller/faster models, cloud uses the heavy ones.
 
 **Is this a wrapper around Gemini / GPT-5.5?**
-No. There's no closed-box API call anywhere in this stack. Everything runs on your hardware on open-source weights.
+No. There's no closed-box API call anywhere in this stack. Lite uses open weights running locally; cloud uses Replicate (which runs open weights — Whisper, Qwen2.5-VL, SAM2, CLIP — on rented GPUs).
+
+**Why drop the Docker self-hosted mode?**
+v1.0.0 / v1.1.x shipped with a 6-container docker-compose stack for users with their own GPUs. We dropped it in v1.2.0 because (a) the cloud + lite combo covers 99% of real use cases, (b) the docker stack added a ton of install friction, and (c) anyone who genuinely needs the cost savings at 1000+ hours/month can run Replicate's models on their own GPU directly (Replicate publishes all their cog templates).
 
 ---
 

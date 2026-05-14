@@ -1,139 +1,60 @@
 # Backends
 
-Every backend is a tiny FastAPI service exposing two endpoints:
+Each pipeline stage has up to two implementations — **lite** (pure-Node WASM) and **cloud** (Replicate). The orchestrator picks per stage based on the resolved runtime mode (see [`src/runtime/mode.ts`](../src/runtime/mode.ts)).
 
-- `GET /health` → `{ ok: boolean, ...meta }`
-- `POST /run` → backend-specific JSON
+## Per-stage adapter matrix
 
-The orchestrator and CLI know nothing about the model internals — only the HTTP contract.
-
-## Default ports
-
-| Backend | Port | Env var |
+| Stage | Lite (pure-Node, free, offline) | Cloud (Replicate, paid) |
 |---|---|---|
-| WhisperX | 9010 | `WHISPERX_URL` |
-| Qwen2.5-VL (via vLLM) | 9011 | `QWEN_VL_URL` |
-| SAM2 | 9012 | `SAM2_URL` |
-| PySceneDetect | 9013 | `SCENEDETECT_URL` |
-| EasyOCR | 9014 | `EASYOCR_URL` |
-| CLIP | 9015 | `CLIP_URL` |
+| **Transcript** | `@xenova/transformers` Whisper-tiny.en (ONNX) | `vaibhavs10/incredibly-fast-whisper` |
+| **Scenes** | `ffmpeg-static` content-aware filter | (no cloud adapter — lite is fast enough) |
+| **OCR** | `tesseract.js` (WASM) | `abiruyt/text-extract-ocr` |
+| **CLIP search** | `@xenova/transformers` CLIP ViT-B/32 (ONNX) | `andreasjansson/clip-features` |
+| **Entities (SAM2)** | (skip — falls back to "no entity tracking") | `meta/sam-2-video` |
+| **Actions / Chapters (Qwen2.5-VL)** | (skip — degraded mode) | `qwen/qwen2.5-vl-7b-instruct` |
 
-## Per-backend HTTP contract
+## How dispatch works
 
-### WhisperX (`:9010`)
+Each `src/backends/<x>.ts` file is a thin dispatcher:
 
-```jsonc
-POST /run
-{
-  "source": "https://example.com/clip.mp4",
-  "language": "en",          // optional ISO 639-1
-  "diarize": true,
-  "minSpeakers": 1,          // optional
-  "maxSpeakers": 4           // optional
-}
-
-→ {
-  "segments": [{ "start_ms", "end_ms", "text", "speaker?", "confidence?" }],
-  "language": "en"
+```ts
+export async function transcribe(opts) {
+  const route = await resolveStage("transcribe");
+  if (route === "cloud") {
+    const { cloudTranscribe } = await import("./cloud/whisperx.js");
+    return cloudTranscribe(opts);
+  }
+  const { liteTranscribe } = await import("./lite/whisper-wasm.js");
+  return liteTranscribe(opts);
 }
 ```
 
-### PySceneDetect (`:9013`)
+- `resolveStage()` reads `~/.vzt-video-intel/config.json` (or the `VZT_MODE` env var) to decide which adapter to load.
+- Dynamic imports keep the lite path from pulling in `@xenova/transformers` if you're only using cloud mode, and vice versa.
+- Both adapters return the same TypeScript shape — the orchestrator + MCP server + CLI don't need to know which one ran.
 
-```jsonc
-POST /run
-{
-  "source": "...",
-  "threshold": 27.0,             // lower = more sensitive
-  "minSceneLengthMs": 1000,
-  "maxScenes": 200
-}
-→ { "scenes": [{ "id", "start_ms", "end_ms" }], "duration_ms": 124800 }
+## Lite adapter notes
 
-POST /run                         // keyframe extraction
-{
-  "mode": "keyframes",
-  "source": "...",
-  "perScene": true,
-  "intervalMs": 2000,
-  "quality": 85
-}
-→ { "keyframes": [{ "scene_id", "t_ms", "jpeg_b64", "width", "height" }] }
-```
+- **Whisper** — defaults to `Xenova/whisper-tiny.en`. Override with `VZT_WHISPER_MODEL=Xenova/whisper-small.en` for higher quality at ~3× the runtime.
+- **Scenes** — uses `select=gt(scene\,0.27)` filter. Tune via `--threshold` (default `27`, lower = more sensitive).
+- **OCR** — `tesseract.js` uses ISO 639-2/T 3-letter codes (`eng`, not `en`). The CLI normalizes 2-letter codes automatically.
+- **CLIP** — defaults to `Xenova/clip-vit-base-patch32`. Samples one frame per second and runs zero-shot scoring against the query.
 
-### EasyOCR (`:9014`)
+## Cloud adapter notes
 
-```jsonc
-POST /run
-{ "source": "...", "languages": ["en"], "sampleEveryMs": 1000 }
-→ { "regions": [{ "start_ms", "end_ms", "text", "bbox": [x, y, w, h], "confidence" }] }
-```
+- All cloud adapters POST to `https://api.replicate.com/v1/models/<owner>/<name>/predictions` and poll until `succeeded`.
+- The Replicate REST client is minimal (`src/backends/cloud/replicate.ts`) — no SDK dependency. ~100 lines.
+- Outputs are reshaped to match the canonical `TranscriptSegment[]` / `Scene[]` / `Entity[]` / etc. types so they're indistinguishable from lite outputs downstream.
+- Cost is roughly $0.06/min of video for the full pipeline. Skip entities + actions and you drop to $0.02/min.
 
-### SAM2 (`:9012`)
+## Adding a new adapter
 
-```jsonc
-POST /run
-{
-  "source": "...",
-  "sceneStartMs": 0,
-  "sceneEndMs": 4200,
-  "promptText": "football players",  // optional
-  "sampleEveryMs": 500
-}
-→ { "entities": [{ "tracking_id", "label", "confidence", "appearances": [...] }] }
-```
+To add a third implementation (e.g. fal.ai cloud, Modal serverless, a custom ONNX model):
 
-### Qwen2.5-VL (`:9011`)
+1. Create `src/backends/<provider>/<stage>.ts` exporting a function with the same signature as `liteTranscribe` / `cloudTranscribe`.
+2. Extend the `Routing` type in `src/runtime/auto.ts` with the new provider name.
+3. Wire it into the dispatcher in `src/backends/<stage>.ts`.
+4. Add an env var to `src/lib/env.ts` if needed (API key, endpoint URL).
+5. Document the pricing + config in [CLOUD-PROVIDERS.md](CLOUD-PROVIDERS.md).
 
-```jsonc
-POST /run
-{
-  "mode": "chapters",
-  "source": "...",
-  "targetChapterCount": 8,
-  "style": "youtube"
-}
-→ { "chapters": [{ "start_ms", "end_ms", "title", "summary?" }] }
-
-POST /run
-{
-  "mode": "actions",
-  "source": "...",
-  "sceneStartMs": 0,
-  "sceneEndMs": 4200
-}
-→ { "actions": [{ "start_ms", "end_ms", "label", "confidence" }] }
-```
-
-### CLIP (`:9015`)
-
-```jsonc
-POST /run
-{
-  "source": "...",
-  "query": "goal scored",
-  "topK": 10,
-  "minScore": 0.2,
-  "sampleEveryMs": 1000
-}
-→ { "hits": [{ "t_ms", "score" }] }
-```
-
-## Swapping backends
-
-Because the contract is stable, you can swap implementations. Examples:
-
-- **WhisperX → Whisper.cpp** — point `WHISPERX_URL` at a Whisper.cpp HTTP wrapper. Drop diarization or pair with a separate Pyannote service.
-- **Qwen2.5-VL → InternVL3** — same vLLM runtime. Change `QWEN_MODEL` env var, restart the container.
-- **CLIP ViT-L-14 → CLIP ViT-bigG-14** — set `CLIP_MODEL=ViT-bigG-14`. 3× slower, better at fine-grained moment search.
-- **SAM2 → DEVA** — both do video segmentation. Wrap DEVA in the same `POST /run` shape; nothing in the orchestrator changes.
-
-## Running backends remotely
-
-The default URLs point at `localhost:90xx`. To run a backend on a different machine, set its env var:
-
-```bash
-WHISPERX_URL=http://gpu-box.lan:9010 vzt-video-intel analyze ./clip.mp4
-```
-
-The orchestrator doesn't care where the backends live, as long as they speak HTTP and pass health checks.
+PRs welcome.
