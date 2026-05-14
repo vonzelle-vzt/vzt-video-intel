@@ -59,6 +59,12 @@ The orchestrator at `src/pipeline/orchestrator.ts`:
 2. **Stage 2**: iterates scenes in chunks of `sceneConcurrency` (default 2). For each scene, fires entity tracking + action recognition in parallel. Wraps with `Promise.allSettled` so a single scene failure doesn't kill the run. Keyframe extraction is also wrapped — a failure there is a warning, not a crash.
 3. **Stage 3**: only runs when the caller explicitly invokes `semantic_search` — it requires CLIP embeddings on every sampled frame which is its own pass.
 
+Per-scene backend failures in Stage 2 don't abort the run — a failed scene degrades to fewer entities/actions and surfaces as a `_warnings[]` line, same as Stage 1.
+
+## Lite captioning runs out-of-process
+
+The lite caption model (vit-gpt2, ONNX/WASM) runs in a **child process** — `src/backends/lite/caption-worker.ts`, driven by `src/backends/lite/vlm-caption.ts`. Inside `analyze` it would otherwise share a process, and a WASM heap, with the Whisper and Tesseract runtimes; on a long video onnxruntime can't allocate its session and the whole process aborts with `bad allocation`. A child gets a fresh heap. The worker loads the model once and is reused for every frame via line-delimited JSON IPC (`{id, imagePath}` → `{id, caption | error}`); it's spawned lazily on the first caption and killed when the parent exits. If the child still dies, that's a catchable non-zero exit — the orchestrator degrades to empty actions plus a `_warnings[]` entry, not a hard crash.
+
 ## Persistent scene-graph cache
 
 `analyzeVideo` is wrapped by a content-addressed disk cache (`src/runtime/graph-cache.ts`) — this is what makes "analyze once, query forever" literally true.

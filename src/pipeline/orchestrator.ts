@@ -35,7 +35,7 @@ export interface AnalyzeOptions {
   onCacheHit?: () => void;
 }
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.1";
 
 export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
   const env = loadEnv();
@@ -110,23 +110,36 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
   const wantActions = opts.recognizeActions !== false;
   const wantKeyframes = opts.includeKeyframes !== false;
 
+  // Per-scene backend failures don't abort the run — they degrade the stage
+  // and surface as a `_warnings[]` entry. Counted here, reported after stage 2.
+  let actionFailures = 0;
+  let entityFailures = 0;
+
   async function processScene(scene: { id: number; start_ms: number; end_ms: number }) {
-    const tasks: Promise<unknown>[] = [];
+    const jobs: { kind: "entities" | "actions"; run: Promise<unknown> }[] = [];
     if (wantEntities) {
-      tasks.push(
-        trackEntities({ source: opts.source, sceneStartMs: scene.start_ms, sceneEndMs: scene.end_ms }).then((r) => {
+      jobs.push({
+        kind: "entities",
+        run: trackEntities({ source: opts.source, sceneStartMs: scene.start_ms, sceneEndMs: scene.end_ms }).then((r) => {
           entities.push(...r.entities);
         }),
-      );
+      });
     }
     if (wantActions) {
-      tasks.push(
-        recognizeActions({ source: opts.source, sceneStartMs: scene.start_ms, sceneEndMs: scene.end_ms }).then((r) => {
+      jobs.push({
+        kind: "actions",
+        run: recognizeActions({ source: opts.source, sceneStartMs: scene.start_ms, sceneEndMs: scene.end_ms }).then((r) => {
           actions.push(...r.actions.map((a) => ({ ...a, scene_id: scene.id })));
         }),
-      );
+      });
     }
-    await Promise.allSettled(tasks);
+    const settled = await Promise.allSettled(jobs.map((j) => j.run));
+    settled.forEach((s, i) => {
+      if (s.status === "rejected") {
+        if (jobs[i].kind === "actions") actionFailures++;
+        else entityFailures++;
+      }
+    });
   }
 
   if (wantKeyframes) {
@@ -140,6 +153,13 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
 
   for (let i = 0; i < scenes.length; i += concurrency) {
     await Promise.allSettled(scenes.slice(i, i + concurrency).map(processScene));
+  }
+
+  if (actionFailures > 0) {
+    warnings.push(`action recognition failed on ${actionFailures}/${scenes.length} scene(s)`);
+  }
+  if (entityFailures > 0) {
+    warnings.push(`entity tracking failed on ${entityFailures}/${scenes.length} scene(s)`);
   }
 
   const graph: SceneGraph = {

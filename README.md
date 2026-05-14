@@ -12,11 +12,11 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/Status-v1.4.0-purple.svg" alt="v1.4.0">
+  <img src="https://img.shields.io/badge/Status-v1.4.1-purple.svg" alt="v1.4.1">
   <img src="https://img.shields.io/badge/MCP-server-orange.svg" alt="MCP server">
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
   <img src="https://img.shields.io/badge/Modes-cloud%20%2B%20lite-green.svg" alt="cloud + lite">
-  <img src="https://img.shields.io/badge/Smoke%20test-13%2F13%20%2B%20E2E-success.svg" alt="smoke tested">
+  <img src="https://img.shields.io/badge/Smoke%20test-14%2F14%20%2B%20E2E-success.svg" alt="smoke tested">
   <img src="https://img.shields.io/badge/Node-%3E%3D%2020-brightgreen.svg" alt="Node 20+">
 </p>
 
@@ -65,7 +65,7 @@ Hand `vintel analyze ./your-clip.mp4` any video and back comes:
   "actions":   [{ "scene_id": 1, "start_ms": 5400, "end_ms": 7200, "label": "pointing at chart", "confidence": 0.87 }],
   "ocr":       [{ "start_ms": 0, "end_ms": 4200, "text": "LIVE • Q3 EARNINGS", "bbox": [40, 20, 320, 60] }],
   "keyframes": [{ "scene_id": 0, "t_ms": 2100, "jpeg_b64": "..." }],
-  "_version":  "1.4.0",
+  "_version":  "1.4.1",
   "_generated_at": "2026-05-14T22:14:08.901Z"
 }
 ```
@@ -137,7 +137,7 @@ The output schema is **identical** across both modes — only the execution path
 
 ## Verified end-to-end
 
-Every stage was smoke-tested before tagging v1.4.0. On a fresh Windows machine with no GPU, no Replicate token:
+Every stage was smoke-tested before tagging v1.4.1. On a fresh Windows machine with no GPU, no Replicate token:
 
 ```
 $ npm install -g vzt-video-intel
@@ -168,7 +168,7 @@ $ vintel analyze ./demo.mp4
   "keyframes": [{ "scene_id": 0, "t_ms": 4000, "width": 320, "height": 240, "jpeg_b64": "..." }, ...],
   "entities": [],
   "actions": [],
-  "_version": "1.4.0"
+  "_version": "1.4.1"
 }
 
 real    0m4.620s
@@ -339,7 +339,7 @@ Per-backend clients are also exported — see `src/backends/*` and [docs/SCHEMA.
 3. **Zero install.** `npm install -g vzt-video-intel` then `vintel analyze`. No Docker. No Python. No GPU. No C++ compiler.
 4. **Two modes, same output.** Lite (free, offline, WASM) and cloud (Replicate, $0.06/min). The JSON schema is identical — your downstream code doesn't care which one ran.
 5. **CLI + MCP duality.** Same engine ships as a shell-friendly CLI **and** as an MCP server for AI IDEs. One install, both modes.
-6. **Smoke-tested end-to-end.** Every stage verified working on a fresh Windows machine with no GPU, no API key — 13/13 automated tests plus a real `observe` run on the bundled fixture. The release notes name the bugs we caught and fixed before tagging.
+6. **Smoke-tested end-to-end.** Every stage verified working on a fresh Windows machine with no GPU, no API key — 14/14 automated tests plus a real `observe` run on the bundled fixture, and a full `analyze` on a real 8.8-minute video. The release notes name the bugs we caught and fixed before tagging.
 
 ---
 

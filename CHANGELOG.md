@@ -2,6 +2,24 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.4.1] — 2026-05-14
+
+### Fixed — lite captioning no longer crashes `analyze` on long videos
+
+Smoke-testing v1.4.0 on a real 8.8-minute video surfaced a hard crash: the default `analyze` (and `observe`) aborted the whole process at the lite visual-caption stage with `onnxruntime ... Exception during initialization: bad allocation` (exit 127, no graph written).
+
+Root cause: the lite caption model (vit-gpt2, ONNX/WASM) shared one process — and one WASM heap — with the Whisper and Tesseract runtimes. On a long video those have grown large by the time captioning starts (18 Whisper windows + 531 OCR frames in the repro), and onnxruntime can't allocate its session. Captioning the same video *standalone* (`vintel chapters`) worked fine — it's purely memory pressure from coexisting runtimes.
+
+- **The lite caption model now runs in a child process** (`src/backends/lite/caption-worker.ts`). It gets a fresh WASM heap, so the OOM is gone — and if a caption *does* fail, it's a catchable non-zero child exit, not a hard abort. The worker loads the model once and is reused for every frame via line-delimited JSON IPC; it's spawned lazily on the first caption and killed when the parent exits.
+- **`analyze` now records action/entity stage failures in `_warnings[]`.** Previously a per-scene backend failure was swallowed silently; now `analyze` exits 0 with a partial graph and a `_warnings[]` line — consistent with how Stage 1 failures already degrade.
+
+### Verified
+
+- `npm run typecheck` → clean
+- `npm run build` → clean
+- `npm test` → 14/14 pass — includes a new test proving a failed caption rejects cleanly instead of crashing the process.
+- The original repro: full `analyze` on the 8.8-minute video now runs end-to-end, exits 0, and produces a complete scene graph including `actions[]` — the crash is gone.
+
 ## [1.4.0] — 2026-05-14
 
 ### Added — analyze once, query forever

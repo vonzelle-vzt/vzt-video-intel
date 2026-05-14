@@ -87,6 +87,18 @@ test("Lite backends import", async () => {
   assert.equal(typeof vlm.liteGenerateChapters, "function");
 });
 
+// The caption model runs in a child process so a crash is a catchable child
+// exit, not a hard abort of `analyze`. A bad frame path fails fast (before the
+// model even loads) and must come back as a rejection — proving the failure
+// path is catchable and the parent survives.
+test("lite caption worker: bad frame path rejects cleanly, no process crash", { timeout: 120_000 }, async () => {
+  const { liteCaptionImage } = await import("../src/backends/lite/vlm-caption.js");
+  await assert.rejects(
+    liteCaptionImage(join(tmpdir(), `vintel-no-such-frame-${Date.now()}.jpg`)),
+    "captioning a missing frame must reject, not crash the process",
+  );
+});
+
 test("vintel auto prints environment report", () => {
   const result = spawnSync("node", ["--import", "tsx", join(root, "src/cli.ts"), "auto"], {
     encoding: "utf-8",

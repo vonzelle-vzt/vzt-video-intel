@@ -40,7 +40,7 @@ const program = new Command();
 program
   .name("vzt-video-intel")
   .description("VZT Video-Intel — temporal scene-graph CLI + MCP server. Gives Claude video understanding.")
-  .version("1.4.0");
+  .version("1.4.1");
 
 function print(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + "\n");

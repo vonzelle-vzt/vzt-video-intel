@@ -36,7 +36,7 @@ function wrap<T>(fn: (params: T) => Promise<unknown> | unknown) {
 }
 
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "vzt-video-intel", version: "1.4.0" });
+  const server = new McpServer({ name: "vzt-video-intel", version: "1.4.1" });
 
   server.tool(
     "analyze_video",

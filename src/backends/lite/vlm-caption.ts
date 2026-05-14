@@ -9,11 +9,19 @@
 // WASM, no GPU, no token). One frame per scene gets captioned; the caption
 // becomes an Action so the scene graph finally describes the picture, not
 // just the text on it.
+//
+// The caption model runs in a CHILD PROCESS (caption-worker.ts). Inside
+// `analyze` it would otherwise share a process — and a WASM heap — with the
+// Whisper and Tesseract runtimes; on a long video onnxruntime then can't
+// allocate its session and the whole process aborts with `bad allocation`.
+// A child gets a fresh heap, and if it still OOMs that's a catchable non-zero
+// exit, not a hard crash of `analyze`.
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, existsSync, unlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { QwenChapterOptions, QwenActionOptions } from "../qwen-vl.js";
 import type { Action, Chapter } from "../../schema/types.js";
@@ -31,27 +39,141 @@ function ffmpegPath(): string {
   return "ffmpeg";
 }
 
-// One loaded pipeline per process — captioning a 60-scene video must not
-// reload the model 60 times.
-let captionerPromise: Promise<any> | null = null;
+// ── caption worker client ──────────────────────────────────────────────────
+//
+// One worker per process, spawned lazily on the first caption and reused for
+// every frame after (the model load is the expensive part). If the worker
+// dies — OOM or otherwise — every pending and future request rejects, which
+// the orchestrator's per-scene `Promise.allSettled` turns into empty actions
+// rather than a crash.
 
-async function getCaptioner(): Promise<{ captioner: any; RawImage: any }> {
-  let mod: any;
+interface PendingReq {
+  resolve: (caption: string) => void;
+  reject: (err: Error) => void;
+}
+
+let worker: ChildProcess | null = null;
+let workerDead: Error | null = null;
+let reqId = 0;
+const pending = new Map<number, PendingReq>();
+let stdoutBuf = "";
+
+// The worker ships as caption-worker.js next to this file once built; in dev
+// (tsx) only the .ts exists, so fall back to running it through tsx.
+function resolveWorkerCommand(): { cmd: string; args: string[] } {
+  const jsPath = fileURLToPath(new URL("./caption-worker.js", import.meta.url));
+  if (existsSync(jsPath)) return { cmd: process.execPath, args: [jsPath] };
+  const tsPath = jsPath.replace(/\.js$/, ".ts");
+  return { cmd: process.execPath, args: ["--import", "tsx", tsPath] };
+}
+
+function failWorker(err: Error): void {
+  workerDead = err;
+  worker = null;
+  for (const p of pending.values()) p.reject(err);
+  pending.clear();
+}
+
+// child_process stdio pipes are net.Sockets at runtime — they expose ref()/
+// unref(), but the ChildProcess type only surfaces them as Readable/Writable.
+function asPipe(s: unknown): { ref(): void; unref(): void } {
+  return s as { ref(): void; unref(): void };
+}
+
+// The worker's stdout pipe may only keep the parent's event loop alive while a
+// caption is actually in flight — otherwise an idle worker would hang the whole
+// process at exit. (The child handle and stdin are never allowed to: we only
+// ever write to stdin.) Call after every change to `pending`.
+function syncStdoutRef(): void {
+  const out = worker?.stdout;
+  if (!out) return;
+  if (pending.size > 0) asPipe(out).ref();
+  else asPipe(out).unref();
+}
+
+function ensureWorker(): ChildProcess {
+  if (worker) return worker;
+  if (workerDead) throw workerDead;
+
+  const { cmd, args } = resolveWorkerCommand();
+  // stderr inherited so onnxruntime/model logs still surface; stdout is the
+  // JSON response channel.
+  const w = spawn(cmd, args, { stdio: ["pipe", "pipe", "inherit"] });
+  worker = w;
+
+  w.stdout!.setEncoding("utf-8");
+  w.stdout!.on("data", (chunk: string) => {
+    stdoutBuf += chunk;
+    let nl: number;
+    while ((nl = stdoutBuf.indexOf("\n")) >= 0) {
+      const line = stdoutBuf.slice(0, nl).trim();
+      stdoutBuf = stdoutBuf.slice(nl + 1);
+      if (!line) continue;
+      let msg: { id: number; caption?: string; error?: string };
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        continue; // stray non-JSON line — ignore
+      }
+      const p = pending.get(msg.id);
+      if (!p) continue;
+      pending.delete(msg.id);
+      syncStdoutRef();
+      if (msg.error) p.reject(new Error(msg.error));
+      else p.resolve(msg.caption ?? "");
+    }
+  });
+
+  w.on("exit", (code, signal) => {
+    if (worker === w) {
+      failWorker(
+        new Error(
+          `lite caption worker exited (code ${code}${signal ? `, signal ${signal}` : ""}) — ` +
+          "likely out of memory; captioning is unavailable for the rest of this run",
+        ),
+      );
+    }
+  });
+  w.on("error", (err) => {
+    if (worker === w) failWorker(err);
+  });
+  w.stdin!.on("error", () => {
+    /* worker gone — the exit handler reports it */
+  });
+  // Never let an idle worker hang the parent: unref the child handle and stdin
+  // outright; stdout is ref'd on demand by syncStdoutRef() while captions are
+  // in flight and unref'd here to start (nothing pending yet).
+  w.unref();
+  asPipe(w.stdin).unref();
+  asPipe(w.stdout).unref();
+
+  return w;
+}
+
+// Kill the worker when the parent exits so it doesn't linger.
+process.on("exit", () => {
   try {
-    mod = await import("@xenova/transformers");
+    worker?.kill();
   } catch {
-    throw new Error(
-      "lite-mode visual captioning requires `@xenova/transformers` (declared optional). " +
-      "Run `npm install @xenova/transformers` or switch to cloud mode with `vintel login`.",
-    );
+    /* ignore */
   }
-  if (!captionerPromise) {
-    const model = process.env.VZT_CAPTION_MODEL ?? "Xenova/vit-gpt2-image-captioning";
-    // eslint-disable-next-line no-console
-    console.error(`[vintel] loading visual caption model ${model} (WASM)…`);
-    captionerPromise = mod.pipeline("image-to-text", model);
-  }
-  return { captioner: await captionerPromise, RawImage: mod.RawImage };
+});
+
+/** Caption a single image file via the worker process. Spawns it on first call. */
+export async function liteCaptionImage(imagePath: string): Promise<string> {
+  const w = ensureWorker();
+  const id = ++reqId;
+  return new Promise<string>((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    syncStdoutRef();
+    w.stdin!.write(JSON.stringify({ id, imagePath }) + "\n", (err) => {
+      if (err) {
+        pending.delete(id);
+        syncStdoutRef();
+        reject(err);
+      }
+    });
+  });
 }
 
 // Pull a single frame at `t_ms` to a temp JPEG and return its path.
@@ -69,19 +191,6 @@ async function grabFrame(source: string, t_ms: number, dir: string): Promise<str
     child.on("close", (code) => (code === 0 && existsSync(out) ? resolve() : reject(new Error(`ffmpeg frame grab exited ${code}`))));
   });
   return out;
-}
-
-function cleanCaption(raw: string): string {
-  return raw.replace(/\s+/g, " ").trim();
-}
-
-/** Caption a single image file. Loads the model on first call, reuses it after. */
-export async function liteCaptionImage(imagePath: string): Promise<string> {
-  const { captioner, RawImage } = await getCaptioner();
-  const image = await RawImage.read(imagePath);
-  const result = await captioner(image);
-  const text: string = Array.isArray(result) ? result[0]?.generated_text ?? "" : result?.generated_text ?? "";
-  return cleanCaption(text);
 }
 
 /**
