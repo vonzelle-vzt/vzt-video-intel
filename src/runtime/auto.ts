@@ -45,7 +45,7 @@ export interface Routing {
   ocr: "cloud" | "lite";
   clip: "cloud" | "lite";
   entities: "cloud" | "skip";
-  actions: "cloud" | "skip";
+  actions: "cloud" | "lite" | "skip";
 }
 
 export function routeFor(mode: "cloud" | "lite", det: Detection): Routing {
@@ -65,8 +65,8 @@ export function routeFor(mode: "cloud" | "lite", det: Detection): Routing {
     scenes: "lite",
     ocr: "lite",
     clip: "lite",
-    entities: det.hasCloudKey ? "cloud" : "skip",
-    actions: det.hasCloudKey ? "cloud" : "skip",
+    entities: det.hasCloudKey ? "cloud" : "skip", // SAM2 has no lite path yet
+    actions: "lite", // local VLM captioning — see backends/lite/vlm-caption.ts
   };
 }
 

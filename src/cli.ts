@@ -3,6 +3,7 @@
 //
 // Subcommands:
 //   analyze       Run the full pipeline on a video, print the scene graph as JSON
+//   observe       Watch + listen — fuse all senses into one perception timeline
 //   transcribe    Whisper transcription
 //   scenes        Scene boundary detection (ffmpeg-static)
 //   entities      Entity tracking (cloud SAM2 — needs Replicate token)
@@ -20,6 +21,7 @@ import { createInterface } from "node:readline/promises";
 import kleur from "kleur";
 
 import { analyzeVideo } from "./pipeline/orchestrator.js";
+import { observeVideo, renderPerceptionText } from "./pipeline/observe.js";
 import { transcribe } from "./backends/whisperx.js";
 import { detectScenes, extractKeyframes } from "./backends/scene-detect.js";
 import { trackEntities } from "./backends/sam2.js";
@@ -36,7 +38,7 @@ const program = new Command();
 program
   .name("vzt-video-intel")
   .description("VZT Video-Intel — temporal scene-graph CLI + MCP server. Gives Claude video understanding.")
-  .version("1.2.0");
+  .version("1.3.0");
 
 function print(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + "\n");
@@ -121,6 +123,30 @@ program
         maxScenes: opts.maxScenes,
       });
       print(result);
+    });
+  });
+
+program
+  .command("observe <source>")
+  .description("Watch AND listen — fuse transcript, visual captions, on-screen text + scenes into one timeline")
+  .option("-l, --language <iso>", "language hint (e.g. en, es)")
+  .option("--max-scenes <n>", "cap scenes analyzed", (v) => parseInt(v, 10))
+  .option("--no-scene-markers", "omit scene-boundary events from the track")
+  .option("-f, --format <fmt>", "output format: json | text", "json")
+  .action(async (source: string, opts) => {
+    await runFirstRunWizardIfNeeded();
+    await tryOrHelp(async () => {
+      const result = await observeVideo({
+        source,
+        language: opts.language,
+        maxScenes: opts.maxScenes,
+        sceneMarkers: opts.sceneMarkers !== false,
+      });
+      if (opts.format === "text") {
+        process.stdout.write(renderPerceptionText(result) + "\n");
+      } else {
+        print(result);
+      }
     });
   });
 

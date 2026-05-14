@@ -6,12 +6,12 @@ Each pipeline stage has up to two implementations — **lite** (pure-Node WASM) 
 
 | Stage | Lite (pure-Node, free, offline) | Cloud (Replicate, paid) |
 |---|---|---|
-| **Transcript** | `@xenova/transformers` Whisper-tiny.en (ONNX) | `vaibhavs10/incredibly-fast-whisper` |
+| **Transcript** | `@xenova/transformers` Whisper-tiny.en (ONNX), 30s-windowed | `vaibhavs10/incredibly-fast-whisper` |
 | **Scenes** | `ffmpeg-static` content-aware filter | (no cloud adapter — lite is fast enough) |
 | **OCR** | `tesseract.js` (WASM) | `abiruyt/text-extract-ocr` |
 | **CLIP search** | `@xenova/transformers` CLIP ViT-B/32 (ONNX) | `andreasjansson/clip-features` |
 | **Entities (SAM2)** | (skip — falls back to "no entity tracking") | `meta/sam-2-video` |
-| **Actions / Chapters (Qwen2.5-VL)** | (skip — degraded mode) | `qwen/qwen2.5-vl-7b-instruct` |
+| **Actions / Chapters (Qwen2.5-VL)** | `@xenova/transformers` ViT-GPT2 caption (ONNX) | `qwen/qwen2.5-vl-7b-instruct` |
 
 ## How dispatch works
 
@@ -35,10 +35,11 @@ export async function transcribe(opts) {
 
 ## Lite adapter notes
 
-- **Whisper** — defaults to `Xenova/whisper-tiny.en`. Override with `VZT_WHISPER_MODEL=Xenova/whisper-small.en` for higher quality at ~3× the runtime.
+- **Whisper** — defaults to `Xenova/whisper-tiny.en`. Audio is transcribed in fixed **30s windows** (whisper's native receptive field), one clean pass per window, reusing a single loaded model. This is what keeps long videos from OOM-crashing the process. A failed window degrades to a gap, never a crash. Override the model with `VZT_WHISPER_MODEL=Xenova/whisper-small.en` for higher quality at ~3× the runtime. Note: English-only (`.en`) models reject a `language` hint — the adapter detects this and omits it automatically; pass a multilingual model (e.g. `Xenova/whisper-small`) if you need language forcing.
 - **Scenes** — uses `select=gt(scene\,0.27)` filter. Tune via `--threshold` (default `27`, lower = more sensitive).
 - **OCR** — `tesseract.js` uses ISO 639-2/T 3-letter codes (`eng`, not `en`). The CLI normalizes 2-letter codes automatically.
 - **CLIP** — defaults to `Xenova/clip-vit-base-patch32`. Samples one frame per second and runs zero-shot scoring against the query.
+- **Actions / Chapters (visual captioning)** — defaults to `Xenova/vit-gpt2-image-captioning`, overridable via `VZT_CAPTION_MODEL`. This is lite mode's "eyes": it grabs one frame at each scene's midpoint and captions it, so `actions[]` describes *what's visible*, not just the text on screen. `generate_chapters` in lite mode buckets scenes and titles each chapter from its first caption — heuristic, no LLM, fully offline. Before v1.3 this stage was `skip` in lite mode.
 
 ## Cloud adapter notes
 

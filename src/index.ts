@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // VZT Video-Intel — MCP server entry point.
 //
-// Boots the stdio MCP server with 8 tools backed by the orchestrator and
+// Boots the stdio MCP server with 9 tools backed by the orchestrator and
 // per-backend clients. Designed to be called via the CLI (`vzt-video-intel mcp`)
 // or directly by an MCP host (Claude Code, Cursor, OpenCode).
 
@@ -10,6 +10,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { analyzeVideo } from "./pipeline/orchestrator.js";
+import { observeVideo } from "./pipeline/observe.js";
 import { transcribe } from "./backends/whisperx.js";
 import { detectScenes, extractKeyframes } from "./backends/scene-detect.js";
 import { trackEntities } from "./backends/sam2.js";
@@ -35,7 +36,7 @@ function wrap<T>(fn: (params: T) => Promise<unknown> | unknown) {
 }
 
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "vzt-video-intel", version: "1.2.0" });
+  const server = new McpServer({ name: "vzt-video-intel", version: "1.3.0" });
 
   server.tool(
     "analyze_video",
@@ -50,6 +51,18 @@ export async function startMcpServer(): Promise<void> {
       recognizeActions: z.boolean().default(true),
     },
     wrap(analyzeVideo),
+  );
+
+  server.tool(
+    "observe_video",
+    "Watch AND listen: returns a single time-sorted perception track fusing spoken audio (hear), visual scene captions (see), on-screen text (read), and scene cuts (scene). Each event is timestamped (t_ms/end_ms). This is the closest thing to a human description of the video — use it when you want to know what happens, not just raw tracks.",
+    {
+      source: z.string().describe("Video file path or URL (mp4, mov, webm, m3u8)"),
+      language: z.string().optional().describe("ISO 639-1 hint"),
+      maxScenes: z.number().int().positive().default(200),
+      sceneMarkers: z.boolean().default(true).describe("Include scene-boundary events in the track"),
+    },
+    wrap(observeVideo),
   );
 
   server.tool(

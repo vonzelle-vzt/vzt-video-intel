@@ -68,6 +68,24 @@ export interface Chapter {
   summary?: string;
 }
 
+// A single thing a human would notice while watching AND listening — the
+// unified output of `observe`. `kind` says which sense it came from:
+//   hear  — spoken audio (transcript)
+//   see   — visual content of a scene (VLM caption / action)
+//   read  — on-screen text (OCR)
+//   scene — a cut / shot boundary
+export type PerceptionKind = "hear" | "see" | "read" | "scene";
+
+export interface PerceptionEvent {
+  t_ms: Milliseconds;
+  end_ms?: Milliseconds;
+  kind: PerceptionKind;
+  text: string;
+  scene_id?: number;
+  speaker?: string;
+  confidence?: number;
+}
+
 export interface SceneGraph {
   source: string;
   duration_ms?: Milliseconds;
@@ -78,7 +96,11 @@ export interface SceneGraph {
   ocr: OcrRegion[];
   keyframes?: Keyframe[];
   chapters?: Chapter[];
+  /** Unified time-sorted "watch + listen" track — populated by `observe`. */
+  perception?: PerceptionEvent[];
   mux_base?: string | null;
+  /** Non-fatal degradations — a backend failed but the pipeline carried on. */
+  _warnings?: string[];
   _pipeline: string;
   _generated_at: string;
   _version: string;

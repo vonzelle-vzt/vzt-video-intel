@@ -33,11 +33,11 @@ Stage 3 (on demand)
 
 | Stage | Lite | Cloud | Why this combo |
 |---|---|---|---|
-| Transcript | Whisper-tiny.en (WASM, 39 MB) | incredibly-fast-whisper | Lite gets ~95% of the quality at 0% of the cost. Cloud is faster for long-form content. |
+| Transcript | Whisper-tiny.en (WASM, 39 MB), 30s-windowed | incredibly-fast-whisper | Lite gets ~95% of the quality at 0% of the cost. Cloud is faster for long-form content. |
 | Scenes | ffmpeg-static `select=gt(scene)` | (lite always) | CPU-light, sub-second on short clips. No GPU value-add. |
 | OCR | Tesseract.js (WASM) | cloud OCR equivalent | Lite handles 95% of overlay text accurately. Cloud is better for dense text or non-Latin scripts. |
 | Entities | (skipped) | SAM2 video | SAM2 is the only model that does video segmentation with stable IDs. Too heavy for CPU WASM. |
-| Actions | (skipped) | Qwen2.5-VL | Best open-source VLM. 72.2 MMMU. Too heavy for CPU. |
+| Actions | ViT-GPT2 caption (WASM, ~250 MB) | Qwen2.5-VL | Lite captions one frame per scene — coarse, but it's real visual understanding offline. Qwen is far sharper; too heavy for CPU. |
 | Search | CLIP ViT-B/32 (ONNX) | CLIP-features | Both run the same model class; lite via @xenova/transformers, cloud at scale. |
 
 ## Why two modes (lite + cloud) instead of three
@@ -55,9 +55,13 @@ The dispatcher architecture still supports adding a "local" provider — it's ju
 
 The orchestrator at `src/pipeline/orchestrator.ts`:
 
-1. **Stage 1**: fires `Promise.all([detectScenes, transcribe, ocrOverlay])`. No data dependencies between them.
-2. **Stage 2**: iterates scenes in chunks of `sceneConcurrency` (default 2). For each scene, fires entity tracking + action recognition in parallel. Wraps with `Promise.allSettled` so a single scene failure doesn't kill the run.
+1. **Stage 1**: fires `Promise.allSettled([detectScenes, transcribe, ocrOverlay])`. No data dependencies between them. Scene detection is the one hard requirement — without it there's nothing to hang timestamps on, so a scene-detection failure throws. Transcription or OCR failing instead degrades gracefully: the stage returns empty, a line is pushed to `_warnings[]`, and the pipeline carries on. `analyze` exits 0 with a partial graph rather than bailing.
+2. **Stage 2**: iterates scenes in chunks of `sceneConcurrency` (default 2). For each scene, fires entity tracking + action recognition in parallel. Wraps with `Promise.allSettled` so a single scene failure doesn't kill the run. Keyframe extraction is also wrapped — a failure there is a warning, not a crash.
 3. **Stage 3**: only runs when the caller explicitly invokes `semantic_search` — it requires CLIP embeddings on every sampled frame which is its own pass.
+
+## `observe` — the fused perception track
+
+`analyze` returns parallel tracks (transcript here, captions there, OCR elsewhere). `observe` (`src/pipeline/observe.ts`) runs `analyze`, then merges all four senses into one time-sorted `PerceptionEvent[]`: `hear` (transcript), `see` (scene captions), `read` (OCR, condensed into stable on-screen lines), `scene` (cut boundaries). The output is a second-by-second script of what a human watching *and* listening would notice — the thing lite mode previously couldn't do at all.
 
 Wall-clock for a 10-minute clip:
 - **Lite mode** on a modern laptop CPU: 3–5 min (Whisper dominates; entities/actions skipped)
@@ -67,9 +71,10 @@ Wall-clock for a 10-minute clip:
 
 For videos > 30 minutes:
 
-1. **`--no-entities --no-actions`** — drop the two cloud stages, keep transcript + scenes + OCR + keyframes + CLIP. Usually 5× faster + free.
-2. **Chunked processing** — split the video into ~5-minute chunks, run per chunk, stitch by offsetting `start_ms`/`end_ms`. The scene-graph schema supports stitching.
+1. **Transcription is already chunked.** The lite Whisper adapter windows audio into 30s passes internally — long videos no longer OOM-crash the process. No manual splitting needed for the transcript stage.
+2. **`--no-entities --no-actions`** — drop entity tracking (cloud-only) and visual captioning, keep transcript + scenes + OCR + keyframes + CLIP. On long videos the per-scene caption pass is the slow part in lite mode; dropping it is the biggest speedup.
 3. **Pre-filter with CLIP** — for "find specific moments" use cases, run `semantic_search` first to narrow the time window, then `analyze` only that window.
+4. **Chunked processing** — for the heavier stages you can still split the video into ~5-minute chunks, run per chunk, and stitch by offsetting `start_ms`/`end_ms`. The scene-graph schema supports stitching.
 
 ## Output stability
 

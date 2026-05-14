@@ -87,6 +87,23 @@ async function extractAudioPcm(source: string): Promise<{ samples: Float32Array;
   return { samples, sampleRate, tmpDir };
 }
 
+const SAMPLE_RATE = 16000;
+// Whisper's encoder has a fixed 30s receptive field. Feeding it exactly one
+// 30s window per call means no internal re-chunking — transformers.js's
+// chunk_length_s/stride path is where long audio silently dropped segments.
+const WINDOW_SEC = 30;
+
+/**
+ * Transcribe in fixed 30s windows instead of one giant call.
+ *
+ * The old implementation handed the entire decoded audio to `transcriber()`
+ * in a single call. On long videos (30+ min) the WASM runtime accumulated
+ * intermediate tensors until the process was OOM-killed mid-run — which is why
+ * `analyze` bailed. Here we slice the PCM into 30s windows (whisper's native
+ * receptive field), run one clean inference per window reusing a single loaded
+ * model, offset each window's timestamps back onto the global timeline, and
+ * isolate failures so one bad window degrades to a gap instead of a crash.
+ */
 export async function liteTranscribe(opts: WhisperXOptions): Promise<{ segments: TranscriptSegment[]; language?: string }> {
   let pipeline: any;
   try {
@@ -100,30 +117,78 @@ export async function liteTranscribe(opts: WhisperXOptions): Promise<{ segments:
   }
 
   const model = process.env.VZT_WHISPER_MODEL ?? "Xenova/whisper-tiny.en";
+  const windowSamples = WINDOW_SEC * SAMPLE_RATE;
+
+  // English-only whisper builds (the `.en` models) reject a `language` option:
+  // it sets forced_decoder_ids the model has no tokens for, and every window
+  // comes back empty. Only multilingual builds take a language hint.
+  const isEnglishOnly = /\.en$/i.test(model);
+  const languageHint = isEnglishOnly || opts.language === "auto" ? undefined : opts.language;
+
   const { samples } = await extractAudioPcm(opts.source);
+  const totalSec = samples.length / SAMPLE_RATE;
+  const windowCount = Math.max(1, Math.ceil(samples.length / windowSamples));
 
   // eslint-disable-next-line no-console
-  console.error(`[vintel] transcribing ${(samples.length / 16000).toFixed(1)}s of audio with ${model} (WASM)…`);
+  console.error(
+    `[vintel] transcribing ${totalSec.toFixed(1)}s of audio with ${model} (WASM) ` +
+    `in ${windowCount} window(s) of ${WINDOW_SEC}s…`,
+  );
+
   const transcriber = await pipeline("automatic-speech-recognition", model);
-  const result = await transcriber(samples, {
-    chunk_length_s: 30,
-    stride_length_s: 5,
-    return_timestamps: true,
-    language: opts.language === "auto" ? undefined : opts.language,
-  });
+  const segments: TranscriptSegment[] = [];
+  let okWindows = 0;
 
-  const chunks: { timestamp: [number, number]; text: string }[] = result?.chunks ?? [];
-  const segments: TranscriptSegment[] = chunks
-    .filter((c) => c.text?.trim().length > 0)
-    .map((c) => ({
-      start_ms: Math.round((c.timestamp[0] ?? 0) * 1000),
-      end_ms: Math.round((c.timestamp[1] ?? c.timestamp[0] ?? 0) * 1000),
-      text: c.text.trim(),
-    }));
+  for (let w = 0; w < windowCount; w++) {
+    const startSample = w * windowSamples;
+    const windowStartMs = Math.round((startSample / SAMPLE_RATE) * 1000);
+    // `slice` (not `subarray`) — we need a fresh, zero-offset ArrayBuffer.
+    // A `subarray` view shares the full backing buffer; transformers.js reads
+    // it byteOffset-unaware and transcribes garbage. The per-window copy is
+    // ~2 MB — cheap and correct.
+    const slice = samples.slice(startSample, startSample + windowSamples);
+    try {
+      // No chunk_length_s: the window already fits whisper's 30s field, so it
+      // runs as a single native pass with reliable per-segment timestamps.
+      const result = await transcriber(slice, {
+        return_timestamps: true,
+        language: languageHint,
+      });
 
-  if (!segments.length && typeof result?.text === "string") {
-    segments.push({ start_ms: 0, end_ms: 0, text: result.text.trim() });
+      const chunks: { timestamp: [number, number]; text: string }[] = result?.chunks ?? [];
+      let added = 0;
+      for (const c of chunks) {
+        const text = c.text?.trim();
+        if (!text) continue;
+        segments.push({
+          start_ms: windowStartMs + Math.round((c.timestamp[0] ?? 0) * 1000),
+          end_ms: windowStartMs + Math.round((c.timestamp[1] ?? c.timestamp[0] ?? 0) * 1000),
+          text,
+        });
+        added++;
+      }
+      // Fallback: model returned plain text with no per-chunk timestamps.
+      if (added === 0 && typeof result?.text === "string" && result.text.trim()) {
+        segments.push({
+          start_ms: windowStartMs,
+          end_ms: windowStartMs + WINDOW_SEC * 1000,
+          text: result.text.trim(),
+        });
+        added++;
+      }
+      okWindows++;
+      if (windowCount > 1 && (w === 0 || (w + 1) % 10 === 0 || w === windowCount - 1)) {
+        // eslint-disable-next-line no-console
+        console.error(`[vintel]   window ${w + 1}/${windowCount} (${segments.length} segment(s) so far)`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error(`[vintel]   window ${w + 1}/${windowCount} failed: ${msg} — skipping`);
+    }
   }
 
+  // eslint-disable-next-line no-console
+  console.error(`[vintel] transcription done — ${segments.length} segment(s) from ${okWindows}/${windowCount} window(s)`);
   return { segments, language: opts.language };
 }

@@ -203,7 +203,7 @@ flowchart LR
     C --> E[ffmpeg<br/>scenes + keyframes]
     C --> F[Tesseract / cloud<br/>OCR]
     C --> G[SAM2 cloud<br/>entity tracking]
-    C --> H[Qwen2.5-VL cloud<br/>actions + chapters]
+    C --> H[VLM caption lite / Qwen2.5-VL cloud<br/>actions + chapters]
     C --> I[CLIP<br/>semantic search]
     D --> J[Scene Graph JSON]
     E --> J
@@ -228,13 +228,14 @@ Each stage has a **lite** (pure-Node WASM) and a **cloud** (Replicate) adapter. 
 vintel <command> [options]    # vzt-video-intel also works
 
   analyze <source>             full pipeline → scene graph JSON
+  observe <source>             watch + listen → one fused perception timeline
   transcribe <source>          Whisper transcription
   scenes <source>              scene boundaries (ffmpeg)
   entities <source>            SAM2 entity tracking (cloud)
   keyframes <source>           per-scene keyframes (base64 JPEG)
   ocr <source>                 on-screen text
   search <source> <query>      CLIP semantic moment search
-  chapters <source>            Qwen2.5-VL chapter generation (cloud)
+  chapters <source>            chapter generation (lite captions / cloud Qwen2.5-VL)
 
   auto [--apply]               detect environment + recommend the best mode
   config [show|set k=v]        show or edit persisted config
@@ -249,6 +250,9 @@ All commands accept `--help` for full option lists.
 ```bash
 # Full pipeline, skip the expensive entity tracking and action recognition
 vintel analyze ./game.mp4 --no-entities --no-actions
+
+# Watch AND listen — one timeline fusing speech, visuals, on-screen text + scenes
+vintel observe ./talk.mp4 --format=text
 
 # Transcribe only, Spanish hint
 vintel transcribe ./meeting.m4a --language=es
@@ -280,20 +284,21 @@ Add to `~/.claude.json` or your project's `.mcp.json`:
 }
 ```
 
-Claude Code restarts the MCP server and exposes 8 tools:
+Claude Code restarts the MCP server and exposes 9 tools:
 
 | Tool | What it does |
 |---|---|
 | `analyze_video` | Full pipeline; returns the complete scene graph |
+| `observe_video` | Watch + listen fused into one time-sorted perception track |
 | `extract_transcript` | Whisper transcription |
 | `detect_scenes` | Content-aware scene boundaries (ffmpeg) |
 | `track_entities` | SAM2 segmentation + temporal tracking (cloud only) |
 | `extract_keyframes` | Representative frames per scene (base64 JPEG) |
 | `ocr_overlay` | Text regions with timestamps |
 | `semantic_search` | CLIP moment search by natural language |
-| `generate_chapters` | LLM-driven chapter generation (cloud only) |
+| `generate_chapters` | Chapter generation (lite captions / cloud Qwen2.5-VL) |
 
-Then in Claude Code: *"Analyze ./game.mp4 and tell me what happens at the 2-minute mark."* Claude calls `analyze_video`, gets the scene graph, and cites timestamps.
+Then in Claude Code: *"Analyze ./game.mp4 and tell me what happens at the 2-minute mark."* Claude calls `analyze_video`, gets the scene graph, and cites timestamps. For *"what actually happens in this video?"*, `observe_video` is the better call — it returns a second-by-second script of what a human watching and listening would notice.
 
 See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for Cursor, OpenCode, Factory Droid, and raw `curl` recipes.
 
@@ -387,7 +392,13 @@ Lite mode on a modern laptop CPU: ~3–5 minutes. Cloud mode on Replicate: ~2–
 Yes. Each subcommand only uses what it needs. `vintel transcribe ./x.mp4` only loads the transcription backend.
 
 **What's the difference between lite and cloud mode?**
-Lite mode skips entities + actions (no SAM2 / Qwen-VL on CPU). Cloud mode runs everything. The other 4 stages (transcribe, scenes, OCR, search) are equally accurate in both — lite uses smaller/faster models, cloud uses the heavy ones.
+Lite mode skips entity tracking (no SAM2 on CPU) and uses a small WASM caption model for visual understanding instead of cloud Qwen2.5-VL — coarser captions, but real "watching" offline. Cloud mode runs the heavy models for everything. The other stages (transcribe, scenes, OCR, search) are equally capable in both — lite uses smaller/faster models, cloud uses the heavy ones.
+
+**Can it handle long videos without crashing?**
+Yes. The lite transcriber windows audio into 30s passes internally, so a 30-minute (or longer) video transcribes window-by-window with bounded memory instead of OOM-crashing the process. And if any stage fails mid-run, the pipeline degrades gracefully — you get a partial scene graph with a `_warnings[]` entry, not a hard crash.
+
+**`analyze` vs `observe`?**
+`analyze` gives you the raw scene graph — separate tracks for transcript, scenes, captions, OCR. `observe` runs `analyze` then *fuses* those into one time-sorted timeline: `hear` (speech), `see` (visuals), `read` (on-screen text), `scene` (cuts). Use `observe` when you want to know what *happens*; use `analyze` when you want the structured tracks to query yourself.
 
 **Is this a wrapper around Gemini / GPT-5.5?**
 No. There's no closed-box API call anywhere in this stack. Lite uses open weights running locally; cloud uses Replicate (which runs open weights — Whisper, Qwen2.5-VL, SAM2, CLIP — on rented GPUs).

@@ -2,6 +2,37 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.3.0] — 2026-05-14
+
+### Added — watch + listen
+
+Lite mode could read on-screen text and find scene cuts, but it had no idea what was *visually happening* in a frame, and long videos crashed the transcriber outright. v1.3.0 closes both gaps.
+
+- **`observe` command + `observe_video` MCP tool** — fuses all four senses into one time-sorted `PerceptionEvent[]`: `hear` (speech), `see` (visual scene captions), `read` (on-screen text, condensed into stable lines), `scene` (cut boundaries). A second-by-second script of what a human watching *and* listening would notice. `--format text` renders it as a readable transcript. (`src/pipeline/observe.ts`)
+- **Lite visual captioning** — new `src/backends/lite/vlm-caption.ts` using `@xenova/transformers` image-to-text (`Xenova/vit-gpt2-image-captioning`, overridable via `VZT_CAPTION_MODEL`). `recognizeActions` and `generateChapters` now have real lite paths instead of returning empty — lite mode finally "watches", fully offline.
+- `PerceptionEvent` / `PerceptionKind` types and `SceneGraph.perception` in the schema.
+- `SceneGraph._warnings[]` — surfaces non-fatal stage failures.
+
+### Fixed
+
+- **Long-video transcription no longer crashes the process.** The lite Whisper adapter handed the entire decoded audio to the model in one call; on 30-min+ videos the WASM runtime OOM-killed the process mid-run (this is why `analyze` bailed). Audio is now sliced into fixed 30s windows — whisper's native receptive field — and inferred one clean pass per window, reusing a single loaded model, with bounded memory.
+- **English-only Whisper models returned empty transcripts.** Passing a `language` hint to a `.en` model sets `forced_decoder_ids` it has no tokens for; every window came back blank. The adapter now detects `.en` models and omits the hint.
+- **`analyze` is failure-tolerant.** Stage 1 moved from `Promise.all` to `Promise.allSettled`: a transcription or OCR failure now degrades to an empty stage + a `_warnings[]` entry instead of taking down the whole run. Only scene detection (the timestamp backbone) is still a hard requirement. Keyframe extraction is wrapped too.
+
+### Changed
+
+- `actions` stage now routes to `lite` (was `skip`) when no cloud token is present — see the `Routing` type in `src/runtime/auto.ts`.
+- MCP server exposes 9 tools (was 8).
+- Scene-graph `_version` bumped to `1.3.0` (additive schema change).
+- docs/ARCHITECTURE.md, docs/BACKENDS.md, docs/SCHEMA.md, README.md updated for the above.
+
+### Verified
+
+- npm run typecheck → clean
+- npm run build → clean
+- npm test → 11/11 pass (includes a real `observe` run on the bundled fixture)
+- Full 30-minute video: `analyze` runs end-to-end, exits 0, produces a non-empty transcript — the original crash is gone.
+
 ## [1.2.0] — 2026-05-14
 
 ### Removed — local/Docker mode

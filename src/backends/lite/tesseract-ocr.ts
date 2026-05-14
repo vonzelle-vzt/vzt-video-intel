@@ -60,7 +60,16 @@ export async function liteOcrOverlay(opts: OcrOptions): Promise<{ regions: OcrRe
   const files = readdirSync(tmpDir).filter((f) => f.endsWith(".jpg")).sort();
   const regions: OcrRegion[] = [];
 
-  const worker = await tesseract.createWorker(langs);
+  // The tesseract.js worker's WASM heap grows with every recognize() call and
+  // is never reclaimed. On a long video (~1800 frames at 1 fps) it eventually
+  // OOMs — and the failure is thrown uncaught from inside the worker thread
+  // (process.nextTick), so it can't be caught by a try/catch out here. The fix
+  // is to never let it get that big: recycle the worker every N frames so its
+  // heap stays bounded. ~150 keeps peak memory comfortable on a 30-min video.
+  const recycleEvery = Math.max(25, Number(process.env.VZT_OCR_WORKER_RECYCLE) || 150);
+
+  let worker = await tesseract.createWorker(langs);
+  let sinceRecycle = 0;
   try {
     for (let i = 0; i < files.length; i++) {
       const path = join(tmpDir, files[i]);
@@ -83,9 +92,19 @@ export async function liteOcrOverlay(opts: OcrOptions): Promise<{ regions: OcrRe
         // skip individual frame failures
       }
       try { unlinkSync(path); } catch { /* ignore */ }
+
+      if (++sinceRecycle >= recycleEvery && i < files.length - 1) {
+        try { await worker.terminate(); } catch { /* ignore */ }
+        worker = await tesseract.createWorker(langs);
+        sinceRecycle = 0;
+        if (files.length > recycleEvery) {
+          // eslint-disable-next-line no-console
+          console.error(`[vintel]   OCR ${i + 1}/${files.length} frames (${regions.length} regions)…`);
+        }
+      }
     }
   } finally {
-    await worker.terminate();
+    try { await worker.terminate(); } catch { /* ignore */ }
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
   return { regions };
