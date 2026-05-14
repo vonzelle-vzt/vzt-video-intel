@@ -58,7 +58,7 @@ keywords:
 
 When the user asks about video content, invoke the vzt-video-intel MCP server
 via `npx vzt-video-intel mcp`. The server exposes `analyze_video`,
-`extract_transcript`, `semantic_search`, and 5 more tools.
+`observe_video`, `extract_transcript`, `semantic_search`, and 5 more tools.
 
 Always cite timestamps by `start_ms`/`end_ms` from the returned scene graph.
 ```
@@ -71,7 +71,7 @@ Always cite timestamps by `start_ms`/`end_ms` from the returned scene graph.
 ---
 name: video-intel
 description: "Temporal scene-graph extraction for videos"
-version: "1.2.0"
+version: "1.3.0"
 triggers:
   - video
   - clip
@@ -81,7 +81,7 @@ triggers:
 
 # Video Intel skill
 
-Run `npx vzt-video-intel mcp` to expose 8 tools for video analysis.
+Run `npx vzt-video-intel mcp` to expose 9 tools for video analysis.
 See https://github.com/vonzelle-vzt/vzt-video-intel for full schema.
 ```
 
