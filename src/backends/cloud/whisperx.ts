@@ -2,6 +2,7 @@
 // Output is reshaped to match the local WhisperX HTTP contract.
 
 import { replicateRun } from "./replicate.js";
+import { whisperModel } from "../../lib/env.js";
 import type { WhisperXOptions } from "../whisperx.js";
 import type { TranscriptSegment } from "../../schema/types.js";
 
@@ -10,7 +11,7 @@ interface IFWOutput { text: string; chunks?: IFWChunk[] }
 
 export async function cloudTranscribe(opts: WhisperXOptions): Promise<{ segments: TranscriptSegment[]; language?: string }> {
   const output = await replicateRun<IFWOutput>({
-    model: "vaibhavs10/incredibly-fast-whisper",
+    model: whisperModel(),
     input: {
       audio: opts.source,
       task: "transcribe",

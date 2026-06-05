@@ -1,6 +1,7 @@
 // Cloud Qwen2.5-VL via Replicate. Powers both chapter generation and action recognition.
 
 import { replicateRun } from "./replicate.js";
+import { qwenModel } from "../../lib/env.js";
 import type { QwenChapterOptions, QwenActionOptions } from "../qwen-vl.js";
 import type { Chapter, Action } from "../../schema/types.js";
 
@@ -26,7 +27,7 @@ export async function cloudGenerateChapters(opts: QwenChapterOptions): Promise<{
 Return ONLY a JSON array. Each item must have: start_ms (integer), end_ms (integer), title (string), summary (string, optional).
 No prose. No markdown fences.`;
   const output = await replicateRun<RawQwenOutput>({
-    model: "qwen/qwen2.5-vl-7b-instruct",
+    model: qwenModel(),
     input: { video: opts.source, prompt, max_tokens: 1024 },
     timeoutMs: 15 * 60_000,
   });
@@ -41,7 +42,7 @@ export async function cloudRecognizeActions(opts: QwenActionOptions): Promise<{ 
   const prompt = `Identify discrete actions ${range}. Return ONLY a JSON array of {start_ms, end_ms, label, confidence (0..1)}.
 No prose. No markdown fences. label should be a short verb phrase.`;
   const output = await replicateRun<RawQwenOutput>({
-    model: "qwen/qwen2.5-vl-7b-instruct",
+    model: qwenModel(),
     input: { video: opts.source, prompt, max_tokens: 512 },
     timeoutMs: 10 * 60_000,
   });

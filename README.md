@@ -262,11 +262,19 @@ vintel observe ./talk.mp4 --format=text
 vintel analyze ./game.mp4            # second call returns from the cache
 vintel cache                         # list cached scene graphs
 
+# Stream the scene graph as JSONL — each track the moment it's produced
+vintel analyze ./long-keynote.mp4 --stream | jq -c 'select(.type=="scene_analysis")'
+
+# Build a library, then search across ALL of it at once (see docs/CORPUS.md)
+vintel index ./clips                 # analyze every video under ./clips (cached ones are instant)
+vintel search "whiteboard diagram"   # cross-video search — 1 arg = corpus
+vintel search ./highlight.mp4 "ball crossing the goal line" --top-k=5   # 2 args = single-video CLIP
+
+# Score the pipeline against gold fixtures — make a model swap measurable (see docs/EVAL.md)
+vintel eval --ci
+
 # Transcribe only, Spanish hint
 vintel transcribe ./meeting.m4a --language=es
-
-# Find the moment the ball crosses the line (cloud mode for best quality, lite for free)
-vintel search ./highlight.mp4 "ball crossing the goal line" --top-k=5
 
 # YouTube-style chapters (requires Replicate token)
 vintel chapters ./lecture.mp4 --style=course --count=12
@@ -279,7 +287,27 @@ vintel transcribe ./call.mp3 | jq '.segments[] | .text'
 
 ## Using it from Claude Code (MCP)
 
-Add to `~/.claude.json` or your project's `.mcp.json`:
+One command wires the MCP server into your editor — it merges the entry into the
+right config file, in the right format, preserving any servers already there:
+
+```bash
+npx vzt-video-intel install claude          # Claude Code  → ~/.claude.json
+npx vzt-video-intel install claude-desktop  # Claude Desktop
+npx vzt-video-intel install cursor          # Cursor       → ~/.cursor/mcp.json
+npx vzt-video-intel install codex           # Codex        → ~/.codex/config.toml
+npx vzt-video-intel install antigravity     # Antigravity
+npx vzt-video-intel install copilot         # VS Code Copilot → .vscode/mcp.json
+npx vzt-video-intel install all             # all of the above
+
+npx vzt-video-intel install copilot --global   # VS Code user-level instructions
+npx vzt-video-intel install claude --print     # show the snippet, write nothing
+```
+
+Run `vintel login` once and every editor inherits cloud mode from
+`~/.vzt-video-intel/config.json` — no per-editor token. (Pass `--token <r8_…>`
+to embed an explicit `REPLICATE_API_TOKEN` env var instead.)
+
+Prefer to wire it by hand? Add to `~/.claude.json` or your project's `.mcp.json`:
 
 ```json
 {
@@ -292,21 +320,23 @@ Add to `~/.claude.json` or your project's `.mcp.json`:
 }
 ```
 
-Claude Code restarts the MCP server and exposes 9 tools:
+Either way, Claude Code restarts the MCP server and exposes 11 tools:
 
 | Tool | What it does |
 |---|---|
 | `analyze_video` | Full pipeline; returns the complete scene graph |
 | `observe_video` | Watch + listen fused into one time-sorted perception track |
+| `index_corpus` | Analyze a whole directory of videos into the cache (build the library) |
+| `search_corpus` | Search across **all** indexed videos at once, citing source + timestamp |
 | `extract_transcript` | Whisper transcription |
 | `detect_scenes` | Content-aware scene boundaries (ffmpeg) |
 | `track_entities` | SAM2 segmentation + temporal tracking (cloud only) |
 | `extract_keyframes` | Representative frames per scene (base64 JPEG) |
 | `ocr_overlay` | Text regions with timestamps |
-| `semantic_search` | CLIP moment search by natural language |
+| `semantic_search` | CLIP moment search by natural language (single video) |
 | `generate_chapters` | Chapter generation (lite captions / cloud Qwen2.5-VL) |
 
-Then in Claude Code: *"Analyze ./game.mp4 and tell me what happens at the 2-minute mark."* Claude calls `analyze_video`, gets the scene graph, and cites timestamps. For *"what actually happens in this video?"*, `observe_video` is the better call — it returns a second-by-second script of what a human watching and listening would notice.
+Then in Claude Code: *"Analyze ./game.mp4 and tell me what happens at the 2-minute mark."* Claude calls `analyze_video`, gets the scene graph, and cites timestamps. For *"what actually happens in this video?"*, `observe_video` is the better call — it returns a second-by-second script of what a human watching and listening would notice. And for *"index ./clips, then find every moment someone mentions pricing"*, it calls `index_corpus` then `search_corpus` to query across the whole library.
 
 See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for Cursor, OpenCode, Factory Droid, and raw `curl` recipes.
 
@@ -339,7 +369,7 @@ Per-backend clients are also exported — see `src/backends/*` and [docs/SCHEMA.
 3. **Zero install.** `npm install -g vzt-video-intel` then `vintel analyze`. No Docker. No Python. No GPU. No C++ compiler.
 4. **Two modes, same output.** Lite (free, offline, WASM) and cloud (Replicate, $0.06/min). The JSON schema is identical — your downstream code doesn't care which one ran.
 5. **CLI + MCP duality.** Same engine ships as a shell-friendly CLI **and** as an MCP server for AI IDEs. One install, both modes.
-6. **Smoke-tested end-to-end.** Every stage verified working on a fresh Windows machine with no GPU, no API key — 14/14 automated tests plus a real `observe` run on the bundled fixture, and a full `analyze` on a real 8.8-minute video. The release notes name the bugs we caught and fixed before tagging.
+6. **Smoke-tested end-to-end.** Every stage verified working on a fresh Windows machine with no GPU, no API key — 20/20 automated tests (including corpus search, eval metrics, and streaming) plus a real `observe` run on the bundled fixture, and a full `analyze` on a real 8.8-minute video. The release notes name the bugs we caught and fixed before tagging.
 
 ---
 
@@ -349,20 +379,27 @@ Per-backend clients are also exported — see `src/backends/*` and [docs/SCHEMA.
 vzt-video-intel/
 ├── bin/                       CLI entry script
 ├── src/
-│   ├── index.ts               MCP server (9 tools)
+│   ├── index.ts               MCP server (11 tools)
 │   ├── cli.ts                 CLI dispatcher (commander)
+│   ├── install.ts             `vintel install <editor>` config wiring
 │   ├── backends/
 │   │   ├── *.ts               mode-aware dispatchers
 │   │   ├── cloud/             Replicate adapters per stage
 │   │   └── lite/              pure-Node WASM implementations
-│   ├── pipeline/orchestrator  full pipeline coordinator
-│   ├── runtime/               auto-detect, mode resolver, config cache
+│   ├── pipeline/
+│   │   ├── orchestrator.ts    full single-video pipeline coordinator
+│   │   ├── observe.ts         fused watch+listen perception track
+│   │   └── corpus.ts          cross-video index + search
+│   ├── eval/                  gold-fixture scoring (WER / F1 / OCR recall)
+│   ├── runtime/               auto-detect, mode resolver, config + graph cache
 │   ├── schema/types.ts        SceneGraph TypeScript types
 │   └── lib/                   env, http, mux
 ├── docs/
 │   ├── INSTALL.md
 │   ├── ARCHITECTURE.md
 │   ├── SCHEMA.md
+│   ├── CORPUS.md
+│   ├── EVAL.md
 │   ├── BACKENDS.md
 │   ├── INTEGRATIONS.md
 │   ├── COMPARISON.md
@@ -380,6 +417,8 @@ vzt-video-intel/
 - **[INSTALL](docs/INSTALL.md)** — install for cloud / lite / MCP
 - **[ARCHITECTURE](docs/ARCHITECTURE.md)** — pipeline diagram, why these models, data flow per stage
 - **[SCHEMA](docs/SCHEMA.md)** — every field of the scene graph, with examples
+- **[CORPUS](docs/CORPUS.md)** — `index` + cross-video `search`: build a library, query all of it at once
+- **[EVAL](docs/EVAL.md)** — `vintel eval`: WER / boundary-F1 / OCR-recall gold-fixture scoring
 - **[BACKENDS](docs/BACKENDS.md)** — per-stage adapters: lite + cloud
 - **[INTEGRATIONS](docs/INTEGRATIONS.md)** — Claude Code, Cursor, OpenCode, Factory Droid
 - **[COMPARISON](docs/COMPARISON.md)** — side-by-side vs Gemini, Pegasus, GPT-5.5 video, OSS wrappers

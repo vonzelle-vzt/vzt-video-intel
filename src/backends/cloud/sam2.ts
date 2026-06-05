@@ -1,6 +1,7 @@
 // Cloud SAM2 video segmentation via Replicate.
 
 import { replicateRun } from "./replicate.js";
+import { samModel } from "../../lib/env.js";
 import type { Sam2Options } from "../sam2.js";
 import type { Entity } from "../../schema/types.js";
 
@@ -10,7 +11,7 @@ interface RawSam2Output {
 
 export async function cloudTrackEntities(opts: Sam2Options): Promise<{ entities: Entity[] }> {
   const output = await replicateRun<RawSam2Output>({
-    model: "meta/sam-2-video",
+    model: samModel(),
     input: {
       video: opts.source,
       mask_type: "highlighted",

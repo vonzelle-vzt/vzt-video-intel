@@ -13,7 +13,21 @@ import { recognizeActions } from "../backends/qwen-vl.js";
 import { loadEnv } from "../lib/env.js";
 import { getRouting } from "../runtime/mode.js";
 import { cacheKey, readGraph, writeGraph } from "../runtime/graph-cache.js";
-import type { SceneGraph, Entity, Action, Keyframe, TranscriptSegment, OcrRegion } from "../schema/types.js";
+import type { SceneGraph, Scene, Entity, Action, Keyframe, TranscriptSegment, OcrRegion } from "../schema/types.js";
+
+// Incremental pipeline output. With `onEvent`, each track is emitted the moment
+// it lands instead of waiting for the whole graph — the basis of `--stream`
+// (JSONL) for long videos. Purely additive: the full SceneGraph is still
+// returned and cached exactly as before.
+export type StreamEvent =
+  | { type: "meta"; source: string }
+  | { type: "scenes"; scenes: Scene[]; duration_ms?: number }
+  | { type: "transcript"; segments: TranscriptSegment[] }
+  | { type: "ocr"; regions: OcrRegion[] }
+  | { type: "keyframes"; count: number }
+  | { type: "scene_analysis"; scene_id: number; entities: Entity[]; actions: Action[] }
+  | { type: "warning"; message: string }
+  | { type: "done"; duration_ms?: number; warnings?: string[]; fromCache: boolean };
 
 export interface AnalyzeOptions {
   source: string;
@@ -33,6 +47,28 @@ export interface AnalyzeOptions {
   noCache?: boolean;
   /** Invoked when the result is served from the persistent cache (no pipeline run). */
   onCacheHit?: () => void;
+  /** Emits each track as it's produced (and replays a cache hit as events). Powers `--stream`. */
+  onEvent?: (event: StreamEvent) => void;
+}
+
+// Replay a finished/cached graph as the same event sequence a live run emits,
+// so `--stream` behaves identically on a cache hit.
+function emitGraphAsEvents(graph: SceneGraph, onEvent: (e: StreamEvent) => void): void {
+  onEvent({ type: "meta", source: graph.source });
+  onEvent({ type: "scenes", scenes: graph.scenes, duration_ms: graph.duration_ms });
+  onEvent({ type: "transcript", segments: graph.transcript });
+  onEvent({ type: "ocr", regions: graph.ocr });
+  if (graph.keyframes?.length) onEvent({ type: "keyframes", count: graph.keyframes.length });
+  for (const scene of graph.scenes) {
+    onEvent({
+      type: "scene_analysis",
+      scene_id: scene.id,
+      entities: graph.entities.filter((e) => e.appearances.some((a) => a.scene_id === scene.id)),
+      actions: graph.actions.filter((a) => a.scene_id === scene.id),
+    });
+  }
+  for (const w of graph._warnings ?? []) onEvent({ type: "warning", message: w });
+  onEvent({ type: "done", duration_ms: graph.duration_ms, warnings: graph._warnings, fromCache: true });
 }
 
 const VERSION = "1.4.1";
@@ -63,11 +99,13 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
       const hit = readGraph(key);
       if (hit) {
         opts.onCacheHit?.();
+        if (opts.onEvent) emitGraphAsEvents(hit, opts.onEvent);
         return hit;
       }
     }
   }
 
+  opts.onEvent?.({ type: "meta", source: opts.source });
   const warnings: string[] = [];
 
   // Stage 1: scenes + transcript + OCR — fully independent, fire in parallel.
@@ -100,6 +138,12 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
   const scenes = scenesRes.scenes;
   const duration_ms = scenesRes.duration_ms ?? (scenes.length ? scenes[scenes.length - 1].end_ms : undefined);
 
+  // Stage 1 results are final — emit them now so a streaming consumer can start
+  // working while stage 2 (the slow per-scene work) is still running.
+  opts.onEvent?.({ type: "scenes", scenes, duration_ms });
+  opts.onEvent?.({ type: "transcript", segments: transcriptRes.segments });
+  opts.onEvent?.({ type: "ocr", regions: ocrRes.regions });
+
   // Stage 2: per-scene work — entity tracking + actions + keyframes
   const entities: Entity[] = [];
   const actions: Action[] = [];
@@ -116,12 +160,16 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
   let entityFailures = 0;
 
   async function processScene(scene: { id: number; start_ms: number; end_ms: number }) {
+    // Collect this scene's results locally so we can both push to the graph
+    // and emit them as a single per-scene event for streaming consumers.
+    const sceneEntities: Entity[] = [];
+    const sceneActions: Action[] = [];
     const jobs: { kind: "entities" | "actions"; run: Promise<unknown> }[] = [];
     if (wantEntities) {
       jobs.push({
         kind: "entities",
         run: trackEntities({ source: opts.source, sceneStartMs: scene.start_ms, sceneEndMs: scene.end_ms }).then((r) => {
-          entities.push(...r.entities);
+          sceneEntities.push(...r.entities);
         }),
       });
     }
@@ -129,7 +177,7 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
       jobs.push({
         kind: "actions",
         run: recognizeActions({ source: opts.source, sceneStartMs: scene.start_ms, sceneEndMs: scene.end_ms }).then((r) => {
-          actions.push(...r.actions.map((a) => ({ ...a, scene_id: scene.id })));
+          sceneActions.push(...r.actions.map((a) => ({ ...a, scene_id: scene.id })));
         }),
       });
     }
@@ -140,12 +188,16 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
         else entityFailures++;
       }
     });
+    entities.push(...sceneEntities);
+    actions.push(...sceneActions);
+    opts.onEvent?.({ type: "scene_analysis", scene_id: scene.id, entities: sceneEntities, actions: sceneActions });
   }
 
   if (wantKeyframes) {
     try {
       const kf = await extractKeyframes({ source: opts.source, perScene: true });
       keyframes.push(...kf.keyframes);
+      opts.onEvent?.({ type: "keyframes", count: keyframes.length });
     } catch (err) {
       warnings.push(`keyframe extraction failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -181,6 +233,9 @@ export async function analyzeVideo(opts: AnalyzeOptions): Promise<SceneGraph> {
   // Persist for the next run. Partial graphs (with `_warnings`) are cached
   // too — `refresh: true` is the escape hatch to retry a degraded run.
   if (key && !opts.noCache) writeGraph(key, graph);
+
+  for (const w of warnings) opts.onEvent?.({ type: "warning", message: w });
+  opts.onEvent?.({ type: "done", duration_ms, warnings: warnings.length ? warnings : undefined, fromCache: false });
 
   return graph;
 }

@@ -41,7 +41,7 @@ export interface ObserveResult extends SceneGraph {
 // -duplicate rows. Collapse it into stable on-screen "lines": join words that
 // share a frame timestamp, then merge consecutive frames showing the same text
 // into a single event spanning how long it was visible.
-function condenseOcr(regions: OcrRegion[], minConfidence: number): PerceptionEvent[] {
+export function condenseOcr(regions: OcrRegion[], minConfidence: number): PerceptionEvent[] {
   const byFrame = new Map<number, OcrRegion[]>();
   for (const r of regions) {
     if ((r.confidence ?? 1) < minConfidence) continue;

@@ -173,6 +173,163 @@ test("graph-cache: key determinism + read/write/list/clear", async () => {
   assert.equal(gc.listGraphs().length, 0, "store is empty after clear");
 });
 
+test("install: editor normalization + aliases", async () => {
+  const { normalizeEditor, EDITORS } = await import("../src/install.js");
+  assert.equal(normalizeEditor("claude-code"), "claude", "claude-code aliases to claude");
+  assert.equal(normalizeEditor("vscode"), "copilot", "vscode aliases to copilot");
+  assert.equal(normalizeEditor("CURSOR".toLowerCase()), "cursor");
+  assert.equal(normalizeEditor("nonsense"), null, "unknown editor is null");
+  for (const e of EDITORS) assert.equal(normalizeEditor(e), e, `${e} normalizes to itself`);
+});
+
+test("install: snippet shape per editor (JSON + TOML, Copilot type:stdio, token env)", async () => {
+  const { buildSnippet } = await import("../src/install.js");
+
+  // Claude → mcpServers JSON, no type field.
+  const claude = buildSnippet("claude");
+  const claudeDoc = JSON.parse(claude.snippet);
+  assert.ok(claudeDoc.mcpServers["vzt-video-intel"], "claude uses mcpServers root");
+  assert.equal(claudeDoc.mcpServers["vzt-video-intel"].type, undefined, "claude has no type field");
+  assert.deepEqual(claudeDoc.mcpServers["vzt-video-intel"].args, ["vzt-video-intel", "mcp"]);
+
+  // Copilot → servers root with explicit type:stdio.
+  const copilot = buildSnippet("copilot");
+  const copilotDoc = JSON.parse(copilot.snippet);
+  assert.ok(copilotDoc.servers["vzt-video-intel"], "copilot uses servers root");
+  assert.equal(copilotDoc.servers["vzt-video-intel"].type, "stdio", "copilot needs type:stdio");
+
+  // Codex → TOML, not JSON.
+  const codex = buildSnippet("codex");
+  assert.match(codex.snippet, /\[mcp_servers\.vzt-video-intel\]/);
+  assert.match(codex.snippet, /command = "npx"/);
+  assert.equal(codex.file.endsWith("config.toml"), true);
+
+  // Token embeds as an env entry in both formats.
+  const withToken = buildSnippet("claude", { token: "r8_secret" });
+  assert.equal(JSON.parse(withToken.snippet).mcpServers["vzt-video-intel"].env.REPLICATE_API_TOKEN, "r8_secret");
+  const tomlToken = buildSnippet("codex", { token: "r8_secret" });
+  assert.match(tomlToken.snippet, /REPLICATE_API_TOKEN = "r8_secret"/);
+});
+
+test("install: merge is idempotent + preserves existing servers", async () => {
+  const { installEditor } = await import("../src/install.js");
+  const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { join: pjoin } = await import("node:path");
+
+  // Seed a Cursor config that already has an unrelated server.
+  const dir = join(process.env.VZT_VIDEO_INTEL_HOME!, ".cursor");
+  mkdirSync(dir, { recursive: true });
+  const file = pjoin(dir, "mcp.json");
+  writeFileSync(file, JSON.stringify({ mcpServers: { other: { command: "x" } } }, null, 2));
+
+  // Point HOME at the throwaway dir so installEditor writes there.
+  const realHome = process.env.HOME;
+  const realUserProfile = process.env.USERPROFILE;
+  process.env.HOME = process.env.VZT_VIDEO_INTEL_HOME!;
+  process.env.USERPROFILE = process.env.VZT_VIDEO_INTEL_HOME!;
+  try {
+    const first = installEditor("cursor");
+    assert.equal(first.written, true);
+    assert.equal(first.alreadyPresent, false, "first install: not already present");
+
+    const doc1 = JSON.parse(readFileSync(first.file, "utf-8"));
+    assert.ok(doc1.mcpServers.other, "existing server preserved");
+    assert.ok(doc1.mcpServers["vzt-video-intel"], "our server added");
+
+    const second = installEditor("cursor");
+    assert.equal(second.alreadyPresent, true, "second install: already present");
+    const doc2 = JSON.parse(readFileSync(second.file, "utf-8"));
+    assert.equal(Object.keys(doc2.mcpServers).length, 2, "no duplicate entry on re-run");
+  } finally {
+    process.env.HOME = realHome;
+    process.env.USERPROFILE = realUserProfile;
+  }
+});
+
+test("eval metrics: WER, boundary F1, OCR recall (pure functions)", async () => {
+  const { wordErrorRate, boundaryF1, ocrRecall } = await import("../src/eval/metrics.js");
+
+  // WER — one substitution in five reference words = 0.2.
+  assert.equal(wordErrorRate("the quick brown fox jumps", "the quick brown fox runs").wer, 0.2);
+  assert.equal(wordErrorRate("hello world", "hello world").wer, 0, "identical → 0");
+  assert.ok(wordErrorRate("a b", "a b c d").wer > 0, "insertions count as error");
+
+  // Boundary F1 — predicted 7900 matches gold 8000 within ±1000; gold 4000 missed.
+  const f = boundaryF1([7900], [4000, 8000], 1000);
+  assert.equal(f.matched, 1);
+  assert.equal(f.recall, 0.5);
+  assert.equal(f.precision, 1);
+  assert.ok(Math.abs(f.f1 - 0.6667) < 0.01, "F1 ~0.667");
+  assert.equal(boundaryF1([], [], 1000).f1, 1, "nothing expected, nothing predicted → vacuously perfect");
+  assert.equal(boundaryF1([5000], [], 1000).precision, 0, "predicted a boundary that doesn't exist → precision 0");
+
+  // OCR recall — token-subset match, order/case-insensitive, words may be split.
+  const r = ocrRecall(["SCENE", "ONE", "TWO", "THREE"], ["scene one", "scene three"]);
+  assert.equal(r.recall, 1, "both phrases' tokens present");
+  const r2 = ocrRecall(["SCENE", "ONE"], ["scene one", "scene four"]);
+  assert.equal(r2.matched, 1);
+  assert.deepEqual(r2.missing, ["scene four"]);
+});
+
+test("corpus search: ranking, phrase boost, kind filter (over the cached fixture)", async () => {
+  // Seed the cache by analyzing the fixture, then query the corpus.
+  process.env.VZT_MODE = "lite";
+  const { analyzeVideo } = await import("../src/pipeline/orchestrator.js");
+  const { searchCorpus } = await import("../src/pipeline/corpus.js");
+  const fixture = join(root, "test/fixtures/sample.mp4");
+  await analyzeVideo({ source: fixture, includeKeyframes: false, trackEntities: false, recognizeActions: true });
+
+  const res = searchCorpus("scene three");
+  assert.ok(res.videos >= 1, "at least the fixture is indexed");
+  assert.ok(res.hits.length > 0, "finds hits");
+  // Phrase match ("SCENE THREE" as one condensed OCR line) must outrank a bare
+  // single-term match — the phrase boost is the whole point.
+  assert.match(res.hits[0].text.toLowerCase(), /scene three/, "top hit is the phrase line");
+  assert.ok(res.hits[0].score > res.hits[res.hits.length - 1].score, "ranked by score");
+
+  // Kind filter restricts the track.
+  const onlyRead = searchCorpus("scene", { kinds: ["read"] });
+  assert.ok(onlyRead.hits.every((h) => h.kind === "read"), "kind filter respected");
+  const onlySee = searchCorpus("blue", { kinds: ["see"] });
+  assert.ok(onlySee.hits.every((h) => h.kind === "see"), "see-only filter respected");
+
+  // No match → empty, no throw.
+  assert.equal(searchCorpus("zzzznonexistentquery").hits.length, 0);
+}, { timeout: 600_000 });
+
+test("analyze --stream emits a complete event sequence + replays a cache hit", async () => {
+  process.env.VZT_MODE = "lite";
+  const { analyzeVideo } = await import("../src/pipeline/orchestrator.js");
+  const fixture = join(root, "test/fixtures/sample.mp4");
+
+  const events: { type: string }[] = [];
+  await analyzeVideo({
+    source: fixture,
+    includeKeyframes: false,
+    trackEntities: false,
+    recognizeActions: true,
+    onEvent: (e) => events.push(e),
+  });
+  const types = events.map((e) => e.type);
+  assert.equal(types[0], "meta", "starts with meta");
+  assert.ok(types.includes("scenes") && types.includes("transcript") && types.includes("ocr"), "stage-1 tracks emitted");
+  assert.ok(types.includes("scene_analysis"), "per-scene events emitted");
+  assert.equal(types[types.length - 1], "done", "ends with done");
+
+  // A cache hit replays the same sequence (fromCache=true on the done event).
+  const replay: { type: string; fromCache?: boolean }[] = [];
+  await analyzeVideo({
+    source: fixture,
+    includeKeyframes: false,
+    trackEntities: false,
+    recognizeActions: true,
+    onEvent: (e) => replay.push(e),
+  });
+  const done = replay.find((e) => e.type === "done") as { fromCache?: boolean } | undefined;
+  assert.equal(done?.fromCache, true, "replayed from cache");
+  assert.ok(replay.some((e) => e.type === "scenes"), "replay includes track events");
+}, { timeout: 600_000 });
+
 // "Analyze once, query forever" — the second run of the same video must come
 // straight from disk, with refresh/noCache as the documented escape hatches.
 test("persistent graph cache: analyze once, query forever", { timeout: 600_000 }, async () => {

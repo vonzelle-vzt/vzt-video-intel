@@ -7,7 +7,8 @@
 | **Action recognition** | ❌ skipped in lite | ✅ Qwen2.5-VL | implicit | ✅ Marengo | ❌ |
 | **Speaker diarization** | partial | ✅ | ❌ | ✅ | ❌ (needs Pyannote) |
 | **OCR with bounding boxes** | ✅ Tesseract | ✅ cloud OCR | ❌ | partial | ❌ |
-| **Semantic moment search** | ✅ CLIP ONNX | ✅ CLIP cloud | implicit | ✅ | ❌ |
+| **Semantic moment search (single video)** | ✅ CLIP ONNX | ✅ CLIP cloud | implicit | ✅ | ❌ |
+| **Cross-video search (whole library, one query)** | ✅ `vintel search` over the corpus | ✅ same | ❌ stateless, one clip per call | ✅ managed index | ❌ |
 | **Citation by timestamp** | ✅ every element | ✅ every element | text-only | partial | text-only |
 | **MCP server included** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **CLI included** | ✅ | ✅ | n/a | n/a | yes (yt-dlp) |

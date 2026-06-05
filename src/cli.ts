@@ -9,20 +9,27 @@
 //   entities      Entity tracking (cloud SAM2 — needs Replicate token)
 //   keyframes     Per-scene keyframe extraction (ffmpeg-static)
 //   ocr           On-screen text extraction (tesseract.js or cloud)
-//   search        CLIP semantic moment search (transformers.js or cloud)
+//   search        Cross-video corpus search (1 arg) OR single-video CLIP search (2 args)
+//   index         Build a cross-video corpus from a directory of videos
+//   eval          Score the pipeline against gold fixtures (WER / F1 / OCR recall)
 //   chapters      Chapter generation (cloud Qwen2.5-VL — needs Replicate token)
 //   auto          Detect environment + pick best mode (cloud / lite)
 //   config        Show or set persisted configuration
 //   cache         Inspect / clear the persistent scene-graph store
 //   login         Store cloud API token
-//   mcp           Run as an MCP stdio server (for Claude Code, Cursor, OpenCode)
+//   install       Wire the MCP server into an AI editor (Claude/Cursor/Codex/Copilot/Antigravity)
+//   mcp           Run as an MCP stdio server (Claude Code/Desktop, Cursor, Codex, Copilot, Antigravity, OpenCode)
 
 import { Command } from "commander";
 import { createInterface } from "node:readline/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import kleur from "kleur";
 
 import { analyzeVideo } from "./pipeline/orchestrator.js";
 import { observeVideo, renderPerceptionText } from "./pipeline/observe.js";
+import { indexCorpus, searchCorpus } from "./pipeline/corpus.js";
+import { runEval } from "./eval/run.js";
 import { transcribe } from "./backends/whisperx.js";
 import { detectScenes, extractKeyframes } from "./backends/scene-detect.js";
 import { trackEntities } from "./backends/sam2.js";
@@ -30,6 +37,7 @@ import { ocrOverlay } from "./backends/easyocr.js";
 import { semanticSearch } from "./backends/clip.js";
 import { generateChapters } from "./backends/qwen-vl.js";
 import { startMcpServer } from "./index.js";
+import { installEditor, normalizeEditor, EDITORS } from "./install.js";
 import { detect, resolveMode } from "./runtime/auto.js";
 import { readConfig, writeConfig, isFirstRun, markFirstRunComplete } from "./runtime/cache.js";
 import { invalidateRoutingCache } from "./runtime/mode.js";
@@ -40,10 +48,41 @@ const program = new Command();
 program
   .name("vzt-video-intel")
   .description("VZT Video-Intel — temporal scene-graph CLI + MCP server. Gives Claude video understanding.")
-  .version("1.4.1");
+  .version("1.6.0");
 
 function print(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + "\n");
+}
+
+function renderEvalScorecard(result: import("./eval/run.js").EvalResult): void {
+  if (result.fixtures.length === 0) {
+    console.log(kleur.gray(`no gold fixtures found in ${result.fixturesDir}`));
+    console.log(kleur.gray("   add a <name>.gold.json (see docs/EVAL.md), or pass a directory: vintel eval <dir>"));
+    return;
+  }
+  console.log(kleur.bold(`Eval — ${result.fixtures.length} fixture(s) in ${result.fixturesDir}`));
+  for (const fx of result.fixtures) {
+    console.log("");
+    console.log(kleur.cyan(fx.source));
+    if (fx.error) {
+      console.log("   " + kleur.red("✖ analyze failed: ") + fx.error);
+      continue;
+    }
+    for (const s of fx.scores) {
+      const mark = s.pass ? kleur.green("✓") : kleur.red("✖");
+      const value = s.metric === "delta_ms" ? `${s.value}ms` : s.value.toFixed(3);
+      console.log(`   ${mark} ${s.dimension.padEnd(9)} ${s.metric} = ${value}  ${kleur.gray(s.detail)}`);
+    }
+  }
+  console.log("");
+  console.log(result.passed ? kleur.green("✓ all gated dimensions passed") : kleur.red("✖ one or more dimensions regressed"));
+}
+
+// The single-entry block for VS Code's user-level "servers" object (copilot --global).
+function buildCopilotEntry(token?: string): string {
+  const entry: Record<string, unknown> = { type: "stdio", command: "npx", args: ["vzt-video-intel", "mcp"] };
+  if (token) entry.env = { REPLICATE_API_TOKEN: token };
+  return JSON.stringify({ "vzt-video-intel": entry }, null, 2);
 }
 
 async function tryOrHelp<T>(fn: () => Promise<T>): Promise<T | void> {
@@ -114,9 +153,11 @@ program
   .option("--max-scenes <n>", "cap scenes returned", (v) => parseInt(v, 10))
   .option("--refresh", "ignore any cached scene graph and re-run the full pipeline")
   .option("--no-cache", "skip the persistent graph cache (don't read or write)")
+  .option("--stream", "emit each track as JSONL the moment it's produced (one JSON object per line)")
   .action(async (source: string, opts) => {
     await runFirstRunWizardIfNeeded();
     await tryOrHelp(async () => {
+      const streaming = !!opts.stream;
       const result = await analyzeVideo({
         source,
         includeKeyframes: opts.keyframes !== false,
@@ -128,8 +169,11 @@ program
         refresh: !!opts.refresh,
         noCache: opts.cache === false,
         onCacheHit: () => console.error(kleur.gray("(from cache — use --refresh to re-run)")),
+        // In stream mode, write one JSON object per line as each track lands.
+        onEvent: streaming ? (e) => process.stdout.write(JSON.stringify(e) + "\n") : undefined,
       });
-      print(result);
+      // Streaming already wrote everything incrementally; don't re-dump the graph.
+      if (!streaming) print(result);
     });
   });
 
@@ -207,12 +251,82 @@ program
   });
 
 program
-  .command("search <source> <query>")
-  .description("CLIP-based moment search by natural language")
+  .command("search <queryOrSource> [query]")
+  .description(
+    "Search moments. Two forms:\n" +
+      "                       vintel search \"<query>\"            cross-video search over the whole indexed corpus\n" +
+      "                       vintel search <source> \"<query>\"   CLIP moment search within one video",
+  )
   .option("-k, --top-k <n>", "top results", (v) => parseInt(v, 10), 10)
-  .option("--min-score <n>", "minimum similarity", (v) => parseFloat(v), 0.2)
-  .action(async (source: string, query: string, opts) => {
-    await tryOrHelp(async () => print(await semanticSearch({ source, query, topK: opts.topK, minScore: opts.minScore })));
+  .option("--min-score <n>", "minimum similarity (single-video CLIP only)", (v) => parseFloat(v), 0.2)
+  .option("--kind <kinds>", "(corpus) restrict to track kinds, comma-separated: hear,read,see,entity,chapter")
+  .option("--from <sources>", "(corpus) restrict to sources matching these substrings, comma-separated")
+  .action(async (queryOrSource: string, query: string | undefined, opts) => {
+    await tryOrHelp(async () => {
+      // Two args → single-video CLIP search (unchanged). One arg → corpus search.
+      if (query !== undefined) {
+        print(await semanticSearch({ source: queryOrSource, query, topK: opts.topK, minScore: opts.minScore }));
+        return;
+      }
+      const kinds = opts.kind
+        ? (opts.kind.split(",").map((k: string) => k.trim()).filter(Boolean) as ("hear" | "read" | "see" | "entity" | "chapter")[])
+        : undefined;
+      const sources = opts.from ? opts.from.split(",").map((s: string) => s.trim()).filter(Boolean) : undefined;
+      const result = searchCorpus(queryOrSource, { topK: opts.topK, kinds, sources });
+      if (result.videos === 0) {
+        console.error(kleur.yellow("no indexed videos yet — run `vintel index <dir>` first"));
+      }
+      print(result);
+    });
+  });
+
+program
+  .command("index <dir>")
+  .description("Build a cross-video corpus: analyze every video under <dir> (instant for ones already cached)")
+  .option("--no-recursive", "don't descend into subdirectories")
+  .option("--entities", "also run entity tracking (cloud SAM2; slower)")
+  .option("--no-actions", "skip action/caption recognition (smaller index, less to search)")
+  .option("-l, --language <iso>", "language hint for transcription")
+  .action(async (dir: string, opts) => {
+    await runFirstRunWizardIfNeeded();
+    await tryOrHelp(async () => {
+      const result = await indexCorpus(dir, {
+        recursive: opts.recursive !== false,
+        trackEntities: !!opts.entities,
+        recognizeActions: opts.actions !== false,
+        language: opts.language,
+        onVideo: ({ source, status, index, total }) => {
+          const mark = status === "failed" ? kleur.red("✖") : status === "cached" ? kleur.gray("•") : kleur.green("✓");
+          console.error(`   ${mark} [${index}/${total}] ${status.padEnd(8)} ${source}`);
+        },
+      });
+      const secs = Math.round(result.totalDurationMs / 1000);
+      console.error("");
+      console.error(
+        kleur.bold(`indexed ${result.total} video(s) `) +
+          kleur.gray(`(${result.analyzed} analyzed, ${result.fromCache} cached, ${result.failed} failed · ${secs}s total)`),
+      );
+      console.error(kleur.gray('   query it: vintel search "<what you\'re looking for>"'));
+      print(result);
+    });
+  });
+
+program
+  .command("eval [fixturesDir]")
+  .description("Score the pipeline against gold fixtures (transcription WER, scene-boundary F1, OCR recall, duration)")
+  .option("--ci", "exit non-zero if any gold-gated dimension regresses")
+  .option("--json", "print the raw result as JSON instead of a scorecard")
+  .action(async (fixturesDir: string | undefined, opts) => {
+    const dir = fixturesDir ?? join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "eval");
+    await tryOrHelp(async () => {
+      const result = await runEval(dir);
+      if (opts.json) {
+        print(result);
+      } else {
+        renderEvalScorecard(result);
+      }
+      if (opts.ci && !result.passed) process.exit(1);
+    });
   });
 
 program
@@ -334,8 +448,60 @@ program
   });
 
 program
+  .command("install <editor>")
+  .description(
+    "Wire the MCP server into an AI editor: claude | claude-desktop | cursor | codex | antigravity | copilot | all",
+  )
+  .option("--token <token>", "embed a Replicate API token in the editor config (optional — see note)")
+  .option("--print", "print the config snippet instead of writing any file")
+  .option("--global", "(copilot) print the VS Code user-config instructions instead of writing .vscode/mcp.json")
+  .action(async (editor: string, opts) => {
+    const raw = editor.toLowerCase();
+
+    if (raw === "copilot" && opts.global && !opts.print) {
+      console.log(kleur.bold("GitHub Copilot — global (user) install:"));
+      console.log("  1. VS Code → Command Palette (Ctrl/Cmd+Shift+P)");
+      console.log("  2. Run " + kleur.cyan('"MCP: Open User Configuration"'));
+      console.log("  3. Paste this into the " + kleur.cyan('"servers"') + " object:");
+      console.log("");
+      console.log(buildCopilotEntry(opts.token));
+      return;
+    }
+
+    const targets = raw === "all" ? EDITORS : [normalizeEditor(raw)];
+    if (targets.some((t) => t === null)) {
+      console.error(kleur.red("✖ ") + `unknown editor: ${editor}`);
+      console.error("   supported: " + EDITORS.join(", ") + ", all");
+      process.exit(1);
+    }
+
+    for (const ed of targets) {
+      const r = installEditor(ed!, { token: opts.token, print: !!opts.print });
+      if (opts.print) {
+        console.log(kleur.bold(`# ${r.editor} → ${r.file}`));
+        console.log(r.snippet);
+      } else {
+        const verb = r.alreadyPresent ? "updated" : "added";
+        console.log(kleur.green("✓ ") + `${verb} ${kleur.cyan("vzt-video-intel")} in ${r.file}`);
+        console.log(kleur.gray("   next: " + r.invoke));
+      }
+    }
+
+    if (!opts.print && !opts.token) {
+      console.log("");
+      console.log(
+        kleur.gray(
+          "tip: run `vintel login` once — the MCP server reads your Replicate token from\n" +
+            "     ~/.vzt-video-intel/config.json, so every editor inherits cloud mode with no\n" +
+            "     per-editor token. Pass --token only if you prefer an explicit env var.",
+        ),
+      );
+    }
+  });
+
+program
   .command("mcp")
-  .description("Run as an MCP stdio server (for Claude Code, Cursor, OpenCode)")
+  .description("Run as an MCP stdio server (Claude Code/Desktop, Cursor, Codex, Copilot, Antigravity, OpenCode)")
   .action(async () => {
     try {
       await startMcpServer();

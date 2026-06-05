@@ -76,6 +76,14 @@ The lite caption model (vit-gpt2, ONNX/WASM) runs in a **child process** — `sr
 - **Escape hatches**: `refresh` bypasses the read (forces a fresh run, still rewrites the cache); `noCache` skips read *and* write entirely. Exposed as `--refresh` / `--no-cache` on the CLI and `refresh` on the `analyze_video` / `observe_video` MCP tools. `vintel cache` lists the store, `vintel cache clear` wipes it, `vintel cache path` prints the dir.
 - Partial graphs (those carrying `_warnings[]`) are cached too — `refresh` is the way to retry a degraded run.
 
+## Corpus — the cache *is* the library
+
+The corpus layer (`src/pipeline/corpus.ts`) is built directly on the cache above — there is no separate store.
+
+- **`indexCorpus(dir)`** walks a directory for videos and calls `analyzeVideo` on each. Because that's cache-wrapped, a video already analyzed is an instant hit; only new ones run the pipeline. It reports analyzed/cached/failed counts.
+- **`searchCorpus(query)`** enumerates every cached graph (`listGraphs` → `readGraph`), dedupes to one graph per *physical* video (newest wins; source paths are normalized for separators + Windows case so `a/b.mp4` and `a\b.mp4` don't double-count), and runs lexical retrieval over each graph's text tracks — transcript (`hear`), condensed OCR lines (`read`), action/caption labels (`see`), entity labels, chapter titles (`chapter`). Scoring is field-weighted term overlap + a phrase-substring boost; hits are returned ranked, each citing source + timestamp.
+- This is the cross-video capability a stateless per-call API can't have: it has no persistent index to search. Semantic (embedding) ranking is the planned upgrade — the index/dedupe/ranking plumbing is already shaped for it. See [CORPUS.md](CORPUS.md).
+
 ## `observe` — the fused perception track
 
 `analyze` returns parallel tracks (transcript here, captions there, OCR elsewhere). `observe` (`src/pipeline/observe.ts`) runs `analyze`, then merges all four senses into one time-sorted `PerceptionEvent[]`: `hear` (transcript), `see` (scene captions), `read` (OCR, condensed into stable on-screen lines), `scene` (cut boundaries). The output is a second-by-second script of what a human watching *and* listening would notice — the thing lite mode previously couldn't do at all.
@@ -92,6 +100,10 @@ For videos > 30 minutes:
 2. **`--no-entities --no-actions`** — drop entity tracking (cloud-only) and visual captioning, keep transcript + scenes + OCR + keyframes + CLIP. On long videos the per-scene caption pass is the slow part in lite mode; dropping it is the biggest speedup.
 3. **Pre-filter with CLIP** — for "find specific moments" use cases, run `semantic_search` first to narrow the time window, then `analyze` only that window.
 4. **Chunked processing** — for the heavier stages you can still split the video into ~5-minute chunks, run per chunk, and stitch by offsetting `start_ms`/`end_ms`. The scene-graph schema supports stitching.
+
+## Streaming output
+
+`analyzeVideo` takes an optional `onEvent` callback that fires as each track lands — `meta`, then `scenes`/`transcript`/`ocr` (end of stage 1), then one `scene_analysis` per scene (stage 2), then `done`. `vintel analyze --stream` prints these as JSONL (one object per line) so a long video produces output incrementally instead of all-at-once. A cache hit replays the identical sequence (with `done.fromCache = true`). It's purely additive: the full `SceneGraph` is still assembled, returned, and cached exactly as before — streaming is a view over the same run, not a separate path.
 
 ## Output stability
 

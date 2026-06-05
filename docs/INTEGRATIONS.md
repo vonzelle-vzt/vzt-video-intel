@@ -2,6 +2,28 @@
 
 How to wire VZT Video-Intel into the AI tools you already use.
 
+## Fastest path — `vintel install`
+
+One command merges the MCP server into your editor's config (right file, right
+format, preserving any servers already there):
+
+```bash
+npx vzt-video-intel install claude          # Claude Code  → ~/.claude.json
+npx vzt-video-intel install claude-desktop  # Claude Desktop
+npx vzt-video-intel install cursor          # Cursor       → ~/.cursor/mcp.json
+npx vzt-video-intel install codex           # Codex        → ~/.codex/config.toml
+npx vzt-video-intel install antigravity     # Antigravity
+npx vzt-video-intel install copilot         # VS Code Copilot → .vscode/mcp.json
+npx vzt-video-intel install all             # all of the above
+
+npx vzt-video-intel install copilot --global   # VS Code user-level instructions
+npx vzt-video-intel install claude --print     # show the snippet, write nothing
+```
+
+Run `vintel login` once and every editor inherits cloud mode from
+`~/.vzt-video-intel/config.json` — no per-editor token (or pass `--token <r8_…>`
+to embed one explicitly). The manual recipes below are the same thing by hand.
+
 ## Claude Code (MCP)
 
 ### Option 1 — `~/.claude.json` (global)
@@ -58,7 +80,8 @@ keywords:
 
 When the user asks about video content, invoke the vzt-video-intel MCP server
 via `npx vzt-video-intel mcp`. The server exposes `analyze_video`,
-`observe_video`, `extract_transcript`, `semantic_search`, and 5 more tools.
+`observe_video`, `index_corpus`, `search_corpus`, `extract_transcript`,
+`semantic_search`, and 5 more tools.
 
 Always cite timestamps by `start_ms`/`end_ms` from the returned scene graph.
 ```
@@ -71,7 +94,7 @@ Always cite timestamps by `start_ms`/`end_ms` from the returned scene graph.
 ---
 name: video-intel
 description: "Temporal scene-graph extraction for videos"
-version: "1.4.0"
+version: "1.6.0"
 triggers:
   - video
   - clip
@@ -81,7 +104,8 @@ triggers:
 
 # Video Intel skill
 
-Run `npx vzt-video-intel mcp` to expose 9 tools for video analysis.
+Run `npx vzt-video-intel mcp` to expose 11 tools for video analysis — including
+`index_corpus` / `search_corpus` for searching across a whole library of clips.
 See https://github.com/vonzelle-vzt/vzt-video-intel for full schema.
 ```
 

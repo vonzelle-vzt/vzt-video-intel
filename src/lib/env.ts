@@ -58,3 +58,35 @@ export function loadEnv(): Env {
 export function hasCloudKey(): boolean {
   return loadEnv().replicateToken.length > 0;
 }
+
+// ---- cloud model slugs -------------------------------------------------------
+//
+// The Replicate model slug for each heavy stage, overridable via env so power
+// users can point at a newer model without a code change. Defaults stay on the
+// official vendor namespaces (qwen/, meta/) — the proven, stable choice. Newer
+// candidates (e.g. community-published Qwen3-VL / SAM 3 ports) exist; see
+// docs/CLOUD-PROVIDERS.md before opting in. Setting the env is the only thing
+// that changes behavior — defaults are unchanged.
+//
+// These are CLOUD (Replicate) slugs and are deliberately namespaced
+// `VZT_CLOUD_*` so they never collide with the lite backends' Hugging Face
+// model ids (`VZT_WHISPER_MODEL`, `VZT_CAPTION_MODEL`) — a Xenova id is not a
+// valid Replicate slug, and vice versa.
+
+export const DEFAULT_MODELS = {
+  qwen: "qwen/qwen2.5-vl-7b-instruct", // chapters + action recognition
+  sam: "meta/sam-2-video", // entity segmentation + tracking
+  whisper: "vaibhavs10/incredibly-fast-whisper", // transcription (+ diarization)
+} as const;
+
+export function qwenModel(): string {
+  return process.env.VZT_CLOUD_QWEN_MODEL || DEFAULT_MODELS.qwen;
+}
+
+export function samModel(): string {
+  return process.env.VZT_CLOUD_SAM_MODEL || DEFAULT_MODELS.sam;
+}
+
+export function whisperModel(): string {
+  return process.env.VZT_CLOUD_WHISPER_MODEL || DEFAULT_MODELS.whisper;
+}

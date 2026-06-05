@@ -49,9 +49,16 @@ vintel auto --apply         # persist it
 
 The orchestrator dispatches per-stage at runtime based on the persisted config — you can run in mixed mode without setting env vars.
 
-## Claude Code / Cursor / OpenCode (MCP)
+## Claude Code / Cursor / Codex / Copilot / Antigravity (MCP)
 
-Once installed, plug the MCP server into your AI IDE:
+The fastest way is one command — it writes the right config file in the right
+format for your editor:
+
+```bash
+vintel install claude     # or: claude-desktop | cursor | codex | copilot | antigravity | all
+```
+
+Prefer to do it by hand? Plug the MCP server in yourself:
 
 ```json
 {
@@ -66,4 +73,4 @@ Once installed, plug the MCP server into your AI IDE:
 
 The MCP server respects the same persisted mode — so the IDE gets whatever execution path you configured for the CLI.
 
-See [INTEGRATIONS.md](INTEGRATIONS.md) for per-IDE setup.
+See [INTEGRATIONS.md](INTEGRATIONS.md) for per-IDE setup and the full `install` flag list.

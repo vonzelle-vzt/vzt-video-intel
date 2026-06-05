@@ -2,6 +2,64 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.6.0] — 2026-06-05
+
+### Added — the index layer: corpus indexing + cross-video search
+
+Until now the product *claimed* to be "the persistent index layer for video" but only indexed one video at a time. v1.6.0 makes the corpus real — the thing a stateless, per-call native-ingest API structurally cannot do.
+
+- **`vintel index <dir>`** (`src/pipeline/corpus.ts`) — analyzes every video under a directory into the persistent scene-graph cache. Videos already analyzed are instant (cache hit); only new ones run the pipeline. Reports analyzed/cached/failed counts + per-video duration & scene count. `--no-recursive`, `--entities`, `--no-actions`, `-l/--language`.
+- **`vintel search "<query>"`** — cross-video search across the **whole** corpus. Lexical retrieval over every cached scene graph's text tracks: spoken audio (`hear`), on-screen text (`read`), visual captions/actions (`see`), entity labels, and chapter titles. Ranked by field-weighted term overlap + a phrase-match boost; each hit cites source video + timestamp. `--kind` and `--from` filters. **Non-breaking:** the existing single-video CLIP search is preserved as the two-argument form (`vintel search <source> "<query>"`); one argument = corpus, two = single video.
+- OCR is indexed as **condensed on-screen lines** (the same merge `observe` does), so a phrase like "scene three" matches one unit instead of scattered word fragments. Source paths are normalized (separators + Windows case) so the same physical video doesn't double-count.
+- **MCP:** two new tools — `index_corpus` and `search_corpus` — bring the corpus to Claude (11 tools total).
+
+### Added — `vintel eval`: make model swaps measurable, not superstitious
+
+v1.5.0 shipped `VZT_CLOUD_*_MODEL` overrides with no way to tell if a swapped model was actually *better*. The eval harness closes that.
+
+- **`vintel eval [dir]`** (`src/eval/`) — scores the pipeline against gold fixtures (`*.gold.json`). Pure metric functions: transcription **WER** (token Levenshtein), scene-boundary **F1** (tolerance match), **OCR recall** (token-subset), and a duration check. A fixture declares which dimensions it certifies, so a music-only clip simply skips WER instead of failing it. `--ci` exits non-zero if any gold-gated dimension regresses; `--json` for machine output.
+- Ships one honest gold fixture for the bundled test-card clip: OCR recall 1.0, duration exact, scene-boundary **F1 ≈ 0.67** — the detector genuinely misses one text-only section change, and the eval *shows* it rather than rigging a 100%.
+
+### Added — `vintel analyze --stream`
+
+- The orchestrator now takes an optional `onEvent` callback and emits each track as it lands (`meta` → `scenes`/`transcript`/`ocr` → per-scene `scene_analysis` → `done`). `--stream` prints these as JSONL — one object per line — so a long video produces output incrementally instead of all-at-once. A cache hit replays the identical sequence (`done.fromCache = true`). Fully additive: the full `SceneGraph` is still returned and cached exactly as before.
+
+### Deferred (deliberately) — cross-video entity re-ID
+
+Real re-ID ("the same person in clip A and clip C") needs a per-entity *visual embedding* to cluster on, which the schema doesn't persist yet. A label-only version would be misleading, so it stays on the roadmap behind an `Entity.appearances[].embedding` + CLIP-on-crops prerequisite rather than shipping something fake.
+
+### Verified
+
+- `npm run typecheck` → clean · `npm run build` → clean
+- `npm test` → 20/20 pass — adds eval-metric unit tests, a corpus ranking/phrase-boost/kind-filter test, and a streaming event-sequence + cache-replay test.
+- `vintel index test/fixtures` → 1 indexed; `vintel search "scene three"` → "SCENE THREE" line ranks first; `vintel eval` → scorecard as above; `vintel search <source> "<q>"` (2-arg) still returns CLIP hits.
+
+### Docs
+
+- New [docs/CORPUS.md](docs/CORPUS.md) and [docs/EVAL.md](docs/EVAL.md). README gains corpus/eval/streaming sections; ROADMAP moves corpus + search + eval + streaming to **Shipped**.
+
+## [1.5.0] — 2026-06-05
+
+### Added — `vintel install <editor>`: one command to wire the MCP server into any editor
+
+Getting the MCP server into an editor meant hand-editing a config file whose path, format, and root key differed per editor. v1.5.0 collapses that to one command.
+
+- **`vintel install <editor>`** (`src/install.ts`) — merges a single `vzt-video-intel` stdio entry into the target editor's config, creating the file + parent dirs if absent and **preserving any servers already there**. Supported: `claude` (`~/.claude.json`), `claude-desktop` (per-OS path), `cursor` (`~/.cursor/mcp.json`), `codex` (`~/.codex/config.toml` — TOML, not JSON), `antigravity`, `copilot` (`.vscode/mcp.json`, with the `type: "stdio"` VS Code requires), and `all`. Aliases like `claude-code`, `vscode`, `claudedesktop` normalize.
+- **Idempotent** — re-running writes the same entry and reports it was already present; no duplicate keys.
+- **`--print`** shows the snippet without touching disk (also the escape hatch for editors we don't write directly, e.g. OpenCode/Factory Droid). **`--token <r8_…>`** embeds an explicit `REPLICATE_API_TOKEN`; otherwise every editor inherits cloud mode from `vintel login`. **`copilot --global`** prints the VS Code user-level "MCP: Open User Configuration" instructions.
+
+### Added — pin a different cloud model without a code change
+
+- **`VZT_CLOUD_QWEN_MODEL` / `VZT_CLOUD_SAM_MODEL` / `VZT_CLOUD_WHISPER_MODEL`** override the Replicate model slug for chapters/actions, entity tracking, and transcription respectively (`src/lib/env.ts`). Defaults are unchanged (`qwen/qwen2.5-vl-7b-instruct`, `meta/sam-2-video`, `vaibhavs10/incredibly-fast-whisper`) — setting the env is the only thing that changes behavior. Documented in [docs/CLOUD-PROVIDERS.md](docs/CLOUD-PROVIDERS.md).
+- The `VZT_CLOUD_*` prefix deliberately avoids colliding with the **lite** backends' Hugging Face ids (`VZT_WHISPER_MODEL`, `VZT_CAPTION_MODEL`): a Xenova id is not a valid Replicate slug, so one env var must not control both namespaces.
+
+### Verified
+
+- `npm run typecheck` → clean
+- `npm run build` → clean
+- `npm test` → 17/17 pass — three new `install` tests (editor normalization/aliases, per-editor snippet shape incl. TOML + Copilot `type:stdio` + token env, idempotent merge that preserves an existing server).
+- `vintel install … --print` exercised for `claude` (JSON), `codex` (TOML), and `copilot --global`.
+
 ## [1.4.1] — 2026-05-14
 
 ### Fixed — lite captioning no longer crashes `analyze` on long videos

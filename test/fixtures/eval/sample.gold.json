@@ -1,0 +1,8 @@
+{
+  "source": "../sample.mp4",
+  "notes": "Synthetic test-card clip: three labeled sections (SCENE ONE/TWO/THREE), music-only audio, 12s. OCR + duration are exact ground truth. Scene gold = the two section changes the on-screen labels mark (4s, 8s); the content detector only sees the 8s visual cut, so F1 ~0.67 is the honest expected score, not a bug.",
+  "duration": { "ms": 12000, "tolerance_ms": 500 },
+  "ocr": { "phrases": ["SCENE ONE", "SCENE TWO", "SCENE THREE"], "min": 1.0 },
+  "scenes": { "boundaries_ms": [4000, 8000], "tolerance_ms": 1500, "min": 0.5 },
+  "speech": null
+}

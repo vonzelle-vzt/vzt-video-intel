@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // VZT Video-Intel — MCP server entry point.
 //
-// Boots the stdio MCP server with 9 tools backed by the orchestrator and
-// per-backend clients. Designed to be called via the CLI (`vzt-video-intel mcp`)
-// or directly by an MCP host (Claude Code, Cursor, OpenCode).
+// Boots the stdio MCP server with 11 tools backed by the orchestrator and
+// per-backend clients — 9 single-video tools plus index_corpus / search_corpus
+// for the cross-video index layer. Designed to be called via the CLI
+// (`vzt-video-intel mcp`) or directly by an MCP host (Claude Code, Cursor, OpenCode).
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -11,6 +12,7 @@ import { z } from "zod";
 
 import { analyzeVideo } from "./pipeline/orchestrator.js";
 import { observeVideo } from "./pipeline/observe.js";
+import { indexCorpus, searchCorpus } from "./pipeline/corpus.js";
 import { transcribe } from "./backends/whisperx.js";
 import { detectScenes, extractKeyframes } from "./backends/scene-detect.js";
 import { trackEntities } from "./backends/sam2.js";
@@ -36,7 +38,7 @@ function wrap<T>(fn: (params: T) => Promise<unknown> | unknown) {
 }
 
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "vzt-video-intel", version: "1.4.1" });
+  const server = new McpServer({ name: "vzt-video-intel", version: "1.6.0" });
 
   server.tool(
     "analyze_video",
@@ -148,6 +150,36 @@ export async function startMcpServer(): Promise<void> {
       style: z.enum(["youtube", "course", "highlights", "meeting"]).default("youtube"),
     },
     wrap(generateChapters),
+  );
+
+  server.tool(
+    "index_corpus",
+    "Build a cross-video corpus from a directory: analyzes every video under <dir> and caches its scene graph (instant for ones already analyzed — analyze once, query forever). Run this before search_corpus. Returns counts (analyzed/cached/failed) + per-video duration & scene count.",
+    {
+      dir: z.string().describe("Directory of videos to index"),
+      recursive: z.boolean().default(true).describe("Descend into subdirectories"),
+      trackEntities: z.boolean().default(false).describe("Also run entity tracking (cloud SAM2; slower)"),
+      recognizeActions: z.boolean().default(true).describe("Run action/caption recognition — adds the visual 'see' track to the index"),
+      language: z.string().optional().describe("ISO 639-1 transcription hint"),
+    },
+    wrap(({ dir, recursive, trackEntities, recognizeActions, language }) =>
+      indexCorpus(dir, { recursive, trackEntities, recognizeActions, language }),
+    ),
+  );
+
+  server.tool(
+    "search_corpus",
+    "Search across the WHOLE indexed corpus (every video indexed with index_corpus), not a single clip — the thing a stateless per-call API can't do. Lexical retrieval over each scene graph's text tracks (spoken audio, on-screen text, visual captions, entity & chapter labels). Returns ranked hits, each citing source video + timestamp. Run index_corpus first.",
+    {
+      query: z.string().describe("What to look for, e.g. 'goal scored', 'whiteboard diagram'"),
+      topK: z.number().int().positive().max(100).default(20),
+      kinds: z
+        .array(z.enum(["hear", "read", "see", "entity", "chapter"]))
+        .optional()
+        .describe("Restrict to certain track kinds"),
+      sources: z.array(z.string()).optional().describe("Restrict to source paths/URLs matching these substrings"),
+    },
+    wrap(({ query, topK, kinds, sources }) => searchCorpus(query, { topK, kinds, sources })),
   );
 
   const transport = new StdioServerTransport();

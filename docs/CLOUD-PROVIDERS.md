@@ -27,6 +27,30 @@ vintel login                # paste a Replicate token
 vintel config set mode=cloud
 ```
 
+### Pinning a different model version
+
+Each heavy cloud stage runs a specific Replicate model slug. The defaults track
+the official vendor namespaces (`qwen/`, `meta/`) — the proven, stable choice —
+but you can point any stage at a newer or community-published version with an env
+var, no code change:
+
+| Stage | Env var | Default slug |
+|---|---|---|
+| Chapters + actions | `VZT_CLOUD_QWEN_MODEL` | `qwen/qwen2.5-vl-7b-instruct` |
+| Entity tracking | `VZT_CLOUD_SAM_MODEL` | `meta/sam-2-video` |
+| Transcription | `VZT_CLOUD_WHISPER_MODEL` | `vaibhavs10/incredibly-fast-whisper` |
+
+```bash
+# e.g. opt into a community Qwen3-VL port without touching the code
+export VZT_CLOUD_QWEN_MODEL="someuser/qwen3-vl-instruct"
+```
+
+These are **cloud** (Replicate) slugs and are namespaced `VZT_CLOUD_*` so they
+never collide with the lite backends' Hugging Face ids (`VZT_WHISPER_MODEL`,
+`VZT_CAPTION_MODEL` — see [BACKENDS.md](BACKENDS.md)). A Xenova id is not a valid
+Replicate slug, and vice versa. Verify the model's input schema matches what the
+adapter sends (`video`/`audio` + `prompt`) before relying on a non-default slug.
+
 ## Alternatives (adapter stubs)
 
 Switching providers is a single adapter module per stage. The mode-aware dispatcher in `src/backends/<x>.ts` doesn't care which cloud you use — it just calls a `cloudTranscribe()` etc.
