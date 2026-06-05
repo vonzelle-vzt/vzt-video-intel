@@ -2,6 +2,23 @@
 
 All notable changes to VZT Video-Intel are documented in this file.
 
+## [1.6.1] — 2026-06-05
+
+### Fixed — `vintel install` now produces a working config on Windows
+
+Windows GUI hosts (Claude Desktop, etc.) spawn the MCP `command` **without a shell**, and `npx` is a `.cmd` shim — spawning it directly is the single most common "MCP server won't start on Windows" failure. `vintel install` (and the `copilot --global` snippet) now emit the OS-correct launch form automatically:
+
+- **Windows:** `{ "command": "cmd", "args": ["/c", "vzt-video-intel", "mcp"] }`
+- **macOS / Linux:** `{ "command": "npx", "args": ["vzt-video-intel", "mcp"] }` (unchanged)
+
+A new exported `launchSpec()` centralizes this; JSON and TOML writers both use it. Install tests are now platform-aware. No tokens are ever written to editor configs unless `--token` is passed explicitly.
+
+### Docs
+
+- README: npm-version badge, refreshed "about", and a full **Connect it to your AI assistant (MCP)** walkthrough — global install, one-command-per-app table, per-app activation steps, the Windows launch note, and token handling.
+- INSTALL.md: detailed MCP section (per-app paths, Claude Desktop per-OS config locations, activation, Windows form, token safety, manual setup).
+- INTEGRATIONS.md: Windows launch-form callout on the manual recipes.
+
 ## [1.6.0] — 2026-06-05
 
 ### Added — the index layer: corpus indexing + cross-video search

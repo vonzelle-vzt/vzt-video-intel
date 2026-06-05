@@ -147,20 +147,34 @@ function resolveTarget(editor: Editor): Target {
 
 // ---- server entry shape ------------------------------------------------------
 
+// How the editor should launch the server. On Windows, GUI hosts (Claude
+// Desktop, etc.) spawn the command WITHOUT a shell, and `npx` is a `.cmd` shim —
+// spawning it directly is the #1 "MCP server won't start on Windows" failure.
+// Wrapping in `cmd /c` makes Windows resolve the shim reliably. POSIX runs npx
+// directly. Either form launches the same globally-installed (or npx-fetched)
+// `vzt-video-intel mcp` stdio server.
+export function launchSpec(): { command: string; args: string[] } {
+  return platform() === "win32"
+    ? { command: "cmd", args: ["/c", "vzt-video-intel", "mcp"] }
+    : { command: "npx", args: ["vzt-video-intel", "mcp"] };
+}
+
 function jsonEntry(withType: boolean, token?: string): Record<string, unknown> {
+  const { command, args } = launchSpec();
   const entry: Record<string, unknown> = {};
   if (withType) entry.type = "stdio";
-  entry.command = "npx";
-  entry.args = ["vzt-video-intel", "mcp"];
+  entry.command = command;
+  entry.args = args;
   if (token) entry.env = { REPLICATE_API_TOKEN: token };
   return entry;
 }
 
 function tomlBlock(token?: string): string {
+  const { command, args } = launchSpec();
   const lines = [
     `[mcp_servers.${SERVER_KEY}]`,
-    `command = "npx"`,
-    `args = ["vzt-video-intel", "mcp"]`,
+    `command = ${JSON.stringify(command)}`,
+    `args = ${JSON.stringify(args)}`,
   ];
   if (token) {
     lines.push("", `[mcp_servers.${SERVER_KEY}.env]`, `REPLICATE_API_TOKEN = "${token}"`);

@@ -11,12 +11,12 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/vzt-video-intel"><img src="https://img.shields.io/npm/v/vzt-video-intel.svg?color=purple" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/Status-v1.4.1-purple.svg" alt="v1.4.1">
-  <img src="https://img.shields.io/badge/MCP-server-orange.svg" alt="MCP server">
+  <img src="https://img.shields.io/badge/MCP-11%20tools-orange.svg" alt="MCP server">
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
   <img src="https://img.shields.io/badge/Modes-cloud%20%2B%20lite-green.svg" alt="cloud + lite">
-  <img src="https://img.shields.io/badge/Smoke%20test-14%2F14%20%2B%20E2E-success.svg" alt="smoke tested">
+  <img src="https://img.shields.io/badge/Tests-20%2F20%20%2B%20E2E-success.svg" alt="tested">
   <img src="https://img.shields.io/badge/Node-%3E%3D%2020-brightgreen.svg" alt="Node 20+">
 </p>
 
@@ -31,7 +31,9 @@ Every "give Claude video" workaround sits at one of two poles:
 - **Closed-box native models** — Gemini 3.1, Twelve Labs Pegasus, GPT-5.5 video. Hand them a clip, get opaque inference. You can't audit it, can't cite frames, and you pay again every time you ask.
 - **Primitive wrappers** — yt-dlp + Whisper + ffmpeg. You get a transcript. That's it. No scene graph, no entity tracking, no moment search, no timestamps to cite.
 
-VZT Video-Intel is the missing middle — and the middle is a **persistent index layer**, not a temporary gap-filler. It produces a **temporal scene graph**: structured JSON, every element citable by timestamp, written to a local store. **Analyze once, query forever** — re-analyzing a video is an instant cache read, and every `observe` / `search` / `chapters` call reuses it for free. One install. CLI and MCP server. Runs anywhere, no Docker.
+VZT Video-Intel is the missing middle — and the middle is a **persistent index layer**, not a temporary gap-filler. It produces a **temporal scene graph**: structured JSON, every element citable by timestamp, written to a local store. **Analyze once, query forever** — re-analyzing a video is an instant cache read, and every `observe` / `search` / `chapters` call reuses it for free. Index a whole folder of videos and **search across the entire library in one query** — the thing a stateless per-call API structurally can't do. One install. CLI and MCP server (11 tools). Runs anywhere, no Docker.
+
+**In one line:** it watches a video once, saves a timestamped structured description of everything in it, and lets you — or an AI assistant like Claude — instantly query it, search across a whole library, and cite exact moments, with no GPU and no re-processing.
 
 ---
 
@@ -285,29 +287,48 @@ vintel transcribe ./call.mp3 | jq '.segments[] | .text'
 
 ---
 
-## Using it from Claude Code (MCP)
+## Connect it to your AI assistant (MCP)
 
-One command wires the MCP server into your editor — it merges the entry into the
-right config file, in the right format, preserving any servers already there:
+VZT Video-Intel is also an **MCP server** — the standard way an AI assistant calls an external tool. Once connected, you don't run CLI commands; you just *ask* your assistant about a video and it calls the tools, gets the scene graph, and answers with real timestamps. It works in **Claude Code, Claude Desktop, Cursor, Codex, GitHub Copilot, and Antigravity**.
+
+**1. Install globally** (puts `vintel` on your PATH and makes the assistant launch instantly):
 
 ```bash
-npx vzt-video-intel install claude          # Claude Code  → ~/.claude.json
-npx vzt-video-intel install claude-desktop  # Claude Desktop
-npx vzt-video-intel install cursor          # Cursor       → ~/.cursor/mcp.json
-npx vzt-video-intel install codex           # Codex        → ~/.codex/config.toml
-npx vzt-video-intel install antigravity     # Antigravity
-npx vzt-video-intel install copilot         # VS Code Copilot → .vscode/mcp.json
-npx vzt-video-intel install all             # all of the above
-
-npx vzt-video-intel install copilot --global   # VS Code user-level instructions
-npx vzt-video-intel install claude --print     # show the snippet, write nothing
+npm install -g vzt-video-intel
 ```
 
-Run `vintel login` once and every editor inherits cloud mode from
-`~/.vzt-video-intel/config.json` — no per-editor token. (Pass `--token <r8_…>`
-to embed an explicit `REPLICATE_API_TOKEN` env var instead.)
+**2. Wire it into your app** — one command writes the right config file, in the right format, preserving any servers you already have:
 
-Prefer to wire it by hand? Add to `~/.claude.json` or your project's `.mcp.json`:
+```bash
+vintel install claude          # Claude Code      → ~/.claude.json
+vintel install claude-desktop  # Claude Desktop   → per-OS app config
+vintel install cursor          # Cursor           → ~/.cursor/mcp.json
+vintel install codex           # Codex            → ~/.codex/config.toml
+vintel install antigravity     # Antigravity      → ~/.gemini/config/mcp_config.json
+vintel install copilot         # VS Code Copilot  → .vscode/mcp.json (project)
+vintel install all             # everything except project-local copilot
+
+vintel install copilot --global   # prints VS Code user-level setup instructions
+vintel install claude --print     # show the config snippet, write nothing
+```
+
+**3. Activate it** (each app picks up MCP config differently):
+
+| App | After install, do this |
+|---|---|
+| **Claude Code** | reloads automatically |
+| **Claude Desktop** | **fully quit** (system-tray → Quit) and reopen — closing the window isn't enough |
+| **Cursor** | Settings → MCP (the server should show green) |
+| **Codex** | run `codex`, then `/mcp` to confirm |
+| **Antigravity** | auto-reloads; open an Agent session |
+
+Then just ask: *"Analyze ./game.mp4 and tell me what happens at the 2-minute mark"*, or *"Index my ./clips folder, then find every moment someone mentions pricing."*
+
+> **Windows note:** desktop apps spawn the server without a shell, so `vintel install` automatically writes the Windows-safe `cmd /c vzt-video-intel mcp` launch form (it uses plain `npx` on macOS/Linux). You don't have to do anything — it just works.
+
+**Cloud vs lite for your assistant:** run `vintel login` once and **every** connected app inherits cloud mode from `~/.vzt-video-intel/config.json` — **no token goes into any editor config**. Without a token, the assistant runs in free lite mode. (If you'd rather embed an explicit token in one app's config, pass `vintel install <app> --token r8_…`.)
+
+Prefer to wire it by hand instead of `vintel install`? Add this to `~/.claude.json` (or your project's `.mcp.json`); on Windows use `"command": "cmd", "args": ["/c", "vzt-video-intel", "mcp"]`:
 
 ```json
 {
@@ -320,7 +341,7 @@ Prefer to wire it by hand? Add to `~/.claude.json` or your project's `.mcp.json`
 }
 ```
 
-Either way, Claude Code restarts the MCP server and exposes 11 tools:
+Either way, the server exposes 11 tools:
 
 | Tool | What it does |
 |---|---|

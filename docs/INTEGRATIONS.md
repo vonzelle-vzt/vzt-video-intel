@@ -24,6 +24,8 @@ Run `vintel login` once and every editor inherits cloud mode from
 `~/.vzt-video-intel/config.json` — no per-editor token (or pass `--token <r8_…>`
 to embed one explicitly). The manual recipes below are the same thing by hand.
 
+> **🪟 Windows:** the manual JSON/TOML snippets below show the `npx` launch form, which is correct on macOS/Linux. On **Windows**, desktop apps spawn the server without a shell and can't run the `npx` `.cmd` shim directly — use `"command": "cmd", "args": ["/c", "vzt-video-intel", "mcp"]` instead (for TOML: `command = "cmd"`, `args = ["/c", "vzt-video-intel", "mcp"]`). `vintel install` does this for you automatically, so you only need the manual form if you're hand-editing.
+
 ## Claude Code (MCP)
 
 ### Option 1 — `~/.claude.json` (global)

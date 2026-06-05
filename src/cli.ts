@@ -37,7 +37,7 @@ import { ocrOverlay } from "./backends/easyocr.js";
 import { semanticSearch } from "./backends/clip.js";
 import { generateChapters } from "./backends/qwen-vl.js";
 import { startMcpServer } from "./index.js";
-import { installEditor, normalizeEditor, EDITORS } from "./install.js";
+import { installEditor, normalizeEditor, launchSpec, EDITORS } from "./install.js";
 import { detect, resolveMode } from "./runtime/auto.js";
 import { readConfig, writeConfig, isFirstRun, markFirstRunComplete } from "./runtime/cache.js";
 import { invalidateRoutingCache } from "./runtime/mode.js";
@@ -48,7 +48,7 @@ const program = new Command();
 program
   .name("vzt-video-intel")
   .description("VZT Video-Intel — temporal scene-graph CLI + MCP server. Gives Claude video understanding.")
-  .version("1.6.0");
+  .version("1.6.1");
 
 function print(value: unknown): void {
   process.stdout.write(JSON.stringify(value, null, 2) + "\n");
@@ -80,7 +80,8 @@ function renderEvalScorecard(result: import("./eval/run.js").EvalResult): void {
 
 // The single-entry block for VS Code's user-level "servers" object (copilot --global).
 function buildCopilotEntry(token?: string): string {
-  const entry: Record<string, unknown> = { type: "stdio", command: "npx", args: ["vzt-video-intel", "mcp"] };
+  const { command, args } = launchSpec();
+  const entry: Record<string, unknown> = { type: "stdio", command, args };
   if (token) entry.env = { REPLICATE_API_TOKEN: token };
   return JSON.stringify({ "vzt-video-intel": entry }, null, 2);
 }

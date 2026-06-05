@@ -183,14 +183,18 @@ test("install: editor normalization + aliases", async () => {
 });
 
 test("install: snippet shape per editor (JSON + TOML, Copilot type:stdio, token env)", async () => {
-  const { buildSnippet } = await import("../src/install.js");
+  const { buildSnippet, launchSpec } = await import("../src/install.js");
+  const spec = launchSpec(); // platform-aware: npx on POSIX, cmd /c on Windows
 
-  // Claude → mcpServers JSON, no type field.
+  // Claude → mcpServers JSON, no type field, platform-correct launch.
   const claude = buildSnippet("claude");
   const claudeDoc = JSON.parse(claude.snippet);
   assert.ok(claudeDoc.mcpServers["vzt-video-intel"], "claude uses mcpServers root");
   assert.equal(claudeDoc.mcpServers["vzt-video-intel"].type, undefined, "claude has no type field");
-  assert.deepEqual(claudeDoc.mcpServers["vzt-video-intel"].args, ["vzt-video-intel", "mcp"]);
+  assert.equal(claudeDoc.mcpServers["vzt-video-intel"].command, spec.command);
+  assert.deepEqual(claudeDoc.mcpServers["vzt-video-intel"].args, spec.args);
+  // Whatever the launcher, the actual server invocation is always present.
+  assert.ok([claudeDoc.mcpServers["vzt-video-intel"].command, ...claudeDoc.mcpServers["vzt-video-intel"].args].join(" ").includes("vzt-video-intel mcp"));
 
   // Copilot → servers root with explicit type:stdio.
   const copilot = buildSnippet("copilot");
@@ -201,7 +205,7 @@ test("install: snippet shape per editor (JSON + TOML, Copilot type:stdio, token 
   // Codex → TOML, not JSON.
   const codex = buildSnippet("codex");
   assert.match(codex.snippet, /\[mcp_servers\.vzt-video-intel\]/);
-  assert.match(codex.snippet, /command = "npx"/);
+  assert.match(codex.snippet, new RegExp(`command = "${spec.command}"`));
   assert.equal(codex.file.endsWith("config.toml"), true);
 
   // Token embeds as an env entry in both formats.
