@@ -62,7 +62,9 @@ async function extractAudioPcm(source: string): Promise<{ samples: Float32Array;
   let local = source;
   if (source.startsWith("http")) {
     local = join(tmpDir, basename(new URL(source).pathname) || "input.mp4");
-    const res = await fetch(source);
+    const res = await fetch(source, { signal: AbortSignal.timeout(120_000) }).catch((err) => {
+      throw err instanceof Error && err.name === "TimeoutError" ? new Error(`fetch ${source} timed out`) : err;
+    });
     if (!res.ok) throw new Error(`fetch ${source} returned ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(local, buf);
