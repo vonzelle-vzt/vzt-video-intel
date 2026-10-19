@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 
 const SERVER_KEY = "vzt-video-intel";
 
-export type Editor =
+type Editor =
   | "claude"
   | "claude-desktop"
   | "cursor"
@@ -46,12 +46,12 @@ export function normalizeEditor(input: string): Editor | null {
   return (EDITORS as string[]).includes(v) ? (v as Editor) : null;
 }
 
-export interface InstallOptions {
+interface InstallOptions {
   token?: string;
   print?: boolean;
 }
 
-export interface InstallResult {
+interface InstallResult {
   editor: Editor;
   file: string;
   snippet: string; // the block we wrote / would write, ready to show the user

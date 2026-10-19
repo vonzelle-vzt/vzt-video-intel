@@ -17,7 +17,7 @@
 import { analyzeVideo } from "./orchestrator.js";
 import type { SceneGraph, PerceptionEvent, OcrRegion } from "../schema/types.js";
 
-export interface ObserveOptions {
+interface ObserveOptions {
   source: string;
   language?: string;
   maxScenes?: number;
@@ -33,7 +33,7 @@ export interface ObserveOptions {
   onCacheHit?: () => void;
 }
 
-export interface ObserveResult extends SceneGraph {
+interface ObserveResult extends SceneGraph {
   perception: PerceptionEvent[];
 }
 

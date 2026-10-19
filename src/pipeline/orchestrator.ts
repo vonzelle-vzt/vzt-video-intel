@@ -19,7 +19,7 @@ import type { SceneGraph, Scene, Entity, Action, Keyframe, TranscriptSegment, Oc
 // it lands instead of waiting for the whole graph — the basis of `--stream`
 // (JSONL) for long videos. Purely additive: the full SceneGraph is still
 // returned and cached exactly as before.
-export type StreamEvent =
+type StreamEvent =
   | { type: "meta"; source: string }
   | { type: "scenes"; scenes: Scene[]; duration_ms?: number }
   | { type: "transcript"; segments: TranscriptSegment[] }
@@ -29,7 +29,7 @@ export type StreamEvent =
   | { type: "warning"; message: string }
   | { type: "done"; duration_ms?: number; warnings?: string[]; fromCache: boolean };
 
-export interface AnalyzeOptions {
+interface AnalyzeOptions {
   source: string;
   includeKeyframes?: boolean;
   includeMuxUrls?: boolean;

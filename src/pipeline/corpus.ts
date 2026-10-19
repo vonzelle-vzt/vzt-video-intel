@@ -26,7 +26,7 @@ const VIDEO_EXTS = new Set([".mp4", ".mov", ".webm", ".mkv", ".m4v", ".avi", ".m
 
 // ---- indexing ----------------------------------------------------------------
 
-export interface IndexOptions {
+interface IndexOptions {
   /** Recurse into subdirectories (default true). */
   recursive?: boolean;
   /** Run entity tracking while indexing (cloud SAM2 only; default false for speed/lite). */
@@ -39,7 +39,7 @@ export interface IndexOptions {
   onVideo?: (info: { source: string; status: "cached" | "analyzed" | "failed"; index: number; total: number }) => void;
 }
 
-export interface IndexedVideo {
+interface IndexedVideo {
   source: string;
   status: "cached" | "analyzed" | "failed";
   durationMs?: number;
@@ -47,7 +47,7 @@ export interface IndexedVideo {
   error?: string;
 }
 
-export interface IndexResult {
+interface IndexResult {
   dir: string;
   total: number;
   analyzed: number;
@@ -125,7 +125,7 @@ export async function indexCorpus(dir: string, opts: IndexOptions = {}): Promise
 
 // ---- cross-video search ------------------------------------------------------
 
-export interface CorpusSearchOptions {
+interface CorpusSearchOptions {
   topK?: number;
   /** Restrict to specific source paths/URLs (substring match). */
   sources?: string[];
@@ -135,9 +135,9 @@ export interface CorpusSearchOptions {
   minScore?: number;
 }
 
-export type CorpusHitKind = "hear" | "read" | "see" | "entity" | "chapter";
+type CorpusHitKind = "hear" | "read" | "see" | "entity" | "chapter";
 
-export interface CorpusHit {
+interface CorpusHit {
   source: string;
   kind: CorpusHitKind;
   t_ms: number;
@@ -146,7 +146,7 @@ export interface CorpusHit {
   score: number;
 }
 
-export interface CorpusSearchResult {
+interface CorpusSearchResult {
   query: string;
   videos: number; // distinct videos searched
   hits: CorpusHit[];

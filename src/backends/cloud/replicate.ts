@@ -3,7 +3,7 @@
 
 import { loadEnv } from "../../lib/env.js";
 
-export interface ReplicateRunOptions {
+interface ReplicateRunOptions {
   /** Model ref: "owner/name" — Replicate picks the latest version */
   model: string;
   /** Optional pinned version hash for reproducibility */
