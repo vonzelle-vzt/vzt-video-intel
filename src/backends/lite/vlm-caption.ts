@@ -5,7 +5,7 @@
 // Qwen2.5-VL for that; lite mode just returned empty actions[].
 //
 // Here we caption frames locally with a small image-to-text model via
-// @xenova/transformers (Xenova/vit-gpt2-image-captioning by default — pure
+// @huggingface/transformers (Xenova/vit-gpt2-image-captioning by default — pure
 // WASM, no GPU, no token). One frame per scene gets captioned; the caption
 // becomes an Action so the scene graph finally describes the picture, not
 // just the text on it.

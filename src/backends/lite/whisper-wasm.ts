@@ -1,6 +1,6 @@
-// Lite WhisperX via @xenova/transformers (Xenova/whisper-tiny.en).
+// Lite WhisperX via @huggingface/transformers (Xenova/whisper-tiny.en).
 // Pure WASM — no native compilation, works identically on macOS / Linux / Windows.
-// We already depend on @xenova/transformers for CLIP, so this reuses that runtime.
+// We already depend on @huggingface/transformers for CLIP, so this reuses that runtime.
 
 import { spawn } from "node:child_process";
 import { mkdirSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -107,12 +107,12 @@ const WINDOW_SEC = 30;
 export async function liteTranscribe(opts: WhisperXOptions): Promise<{ segments: TranscriptSegment[]; language?: string }> {
   let pipeline: any;
   try {
-    const mod = await import("@xenova/transformers");
+    const mod = await import("@huggingface/transformers");
     pipeline = mod.pipeline;
   } catch {
     throw new Error(
-      "lite-mode transcribe requires `@xenova/transformers` (declared optional). " +
-      "Run `npm install @xenova/transformers` or switch to cloud mode with `vintel login`.",
+      "lite-mode transcribe requires `@huggingface/transformers` (declared optional). " +
+      "Run `npm install @huggingface/transformers` or switch to cloud mode with `vintel login`.",
     );
   }
 

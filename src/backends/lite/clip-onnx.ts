@@ -1,4 +1,4 @@
-// Lite CLIP search via @xenova/transformers (CLIP ViT-B/32 in ONNX).
+// Lite CLIP search via @huggingface/transformers (CLIP ViT-B/32 in ONNX).
 //
 // Samples keyframes from the video, computes CLIP image features in Node,
 // scores against the text query, returns top-K hits with timestamps.
@@ -27,11 +27,11 @@ export async function liteSemanticSearch(opts: ClipSearchOptions): Promise<{ hit
   let pipeline: any;
   let RawImage: any;
   try {
-    const mod = await import("@xenova/transformers");
+    const mod = await import("@huggingface/transformers");
     pipeline = mod.pipeline;
     RawImage = mod.RawImage;
   } catch {
-    throw new Error("lite-mode CLIP requires `@xenova/transformers`. Run `npm install @xenova/transformers`.");
+    throw new Error("lite-mode CLIP requires `@huggingface/transformers`. Run `npm install @huggingface/transformers`.");
   }
 
   const sampleEvery = 1000;
