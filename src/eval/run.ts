@@ -14,7 +14,7 @@ import { boundaryF1, ocrRecall, wordErrorRate } from "./metrics.js";
 
 // ---- gold schema -------------------------------------------------------------
 
-export interface GoldFixture {
+interface GoldFixture {
   /** Video path relative to the gold file (or absolute / URL). */
   source: string;
   notes?: string;
@@ -30,7 +30,7 @@ export interface GoldFixture {
 
 // ---- result shapes -----------------------------------------------------------
 
-export interface DimensionScore {
+interface DimensionScore {
   dimension: "ocr" | "scenes" | "speech" | "duration";
   metric: string; // e.g. "recall", "f1", "wer", "delta_ms"
   value: number;
@@ -38,7 +38,7 @@ export interface DimensionScore {
   detail: string;
 }
 
-export interface FixtureScore {
+interface FixtureScore {
   file: string;
   source: string;
   notes?: string;

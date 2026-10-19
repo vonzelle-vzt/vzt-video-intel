@@ -1,6 +1,6 @@
-// Lite WhisperX via @xenova/transformers (Xenova/whisper-tiny.en).
+// Lite WhisperX via @huggingface/transformers (Xenova/whisper-tiny.en).
 // Pure WASM — no native compilation, works identically on macOS / Linux / Windows.
-// We already depend on @xenova/transformers for CLIP, so this reuses that runtime.
+// We already depend on @huggingface/transformers for CLIP, so this reuses that runtime.
 
 import { spawn } from "node:child_process";
 import { mkdirSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -62,7 +62,9 @@ async function extractAudioPcm(source: string): Promise<{ samples: Float32Array;
   let local = source;
   if (source.startsWith("http")) {
     local = join(tmpDir, basename(new URL(source).pathname) || "input.mp4");
-    const res = await fetch(source);
+    const res = await fetch(source, { signal: AbortSignal.timeout(120_000) }).catch((err) => {
+      throw err instanceof Error && err.name === "TimeoutError" ? new Error(`fetch ${source} timed out`) : err;
+    });
     if (!res.ok) throw new Error(`fetch ${source} returned ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(local, buf);
@@ -107,12 +109,12 @@ const WINDOW_SEC = 30;
 export async function liteTranscribe(opts: WhisperXOptions): Promise<{ segments: TranscriptSegment[]; language?: string }> {
   let pipeline: any;
   try {
-    const mod = await import("@xenova/transformers");
+    const mod = await import("@huggingface/transformers");
     pipeline = mod.pipeline;
   } catch {
     throw new Error(
-      "lite-mode transcribe requires `@xenova/transformers` (declared optional). " +
-      "Run `npm install @xenova/transformers` or switch to cloud mode with `vintel login`.",
+      "lite-mode transcribe requires `@huggingface/transformers` (declared optional). " +
+      "Run `npm install @huggingface/transformers` or switch to cloud mode with `vintel login`.",
     );
   }
 

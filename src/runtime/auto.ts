@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import { hasCloudKey } from "../lib/env.js";
 
-export interface Detection {
+interface Detection {
   node: string;
   hasFfmpeg: boolean;
   hasCloudKey: boolean;
@@ -48,7 +48,7 @@ export interface Routing {
   actions: "cloud" | "lite" | "skip";
 }
 
-export function routeFor(mode: "cloud" | "lite", det: Detection): Routing {
+function routeFor(mode: "cloud" | "lite", det: Detection): Routing {
   if (mode === "cloud") {
     return {
       transcribe: "cloud",

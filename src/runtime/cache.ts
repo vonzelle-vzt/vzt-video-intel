@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { configDir, configPath, Mode } from "../lib/env.js";
 
-export interface PersistedConfig {
+interface PersistedConfig {
   mode?: Mode;
   cloudProvider?: "replicate";
   replicateToken?: string;

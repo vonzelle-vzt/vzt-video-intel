@@ -26,7 +26,7 @@ export function graphCacheDir(): string {
 
 // The slice of AnalyzeOptions that changes the produced graph. Anything not
 // here (sceneConcurrency, callbacks) doesn't affect the payload's identity.
-export interface GraphCacheKeyInput {
+interface GraphCacheKeyInput {
   source: string;
   maxScenes?: number;
   language?: string;
@@ -90,7 +90,7 @@ export function writeGraph(key: string, graph: SceneGraph): void {
   writeFileSync(graphPath(key), JSON.stringify(graph));
 }
 
-export interface CachedGraphInfo {
+interface CachedGraphInfo {
   key: string;
   source: string;
   version: string;

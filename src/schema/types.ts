@@ -105,12 +105,3 @@ export interface SceneGraph {
   _generated_at: string;
   _version: string;
 }
-
-export interface BackendHealth {
-  name: string;
-  url: string;
-  reachable: boolean;
-  status_code?: number;
-  latency_ms?: number;
-  error?: string;
-}

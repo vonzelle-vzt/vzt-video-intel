@@ -3,8 +3,8 @@
 
 import { resolveMode, Routing } from "./auto.js";
 
-export type StageName = "transcribe" | "scenes" | "ocr" | "clip" | "entities" | "actions";
-export type StageRoute = Routing[StageName];
+type StageName = "transcribe" | "scenes" | "ocr" | "clip" | "entities" | "actions";
+type StageRoute = Routing[StageName];
 
 let cached: { routing: Routing; mode: "cloud" | "lite" } | null = null;
 

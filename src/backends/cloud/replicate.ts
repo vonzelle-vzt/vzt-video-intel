@@ -3,7 +3,7 @@
 
 import { loadEnv } from "../../lib/env.js";
 
-export interface ReplicateRunOptions {
+interface ReplicateRunOptions {
   /** Model ref: "owner/name" — Replicate picks the latest version */
   model: string;
   /** Optional pinned version hash for reproducibility */
@@ -21,6 +21,10 @@ interface Prediction {
   output: unknown;
   error: string | null;
   urls: { get: string; cancel: string };
+}
+
+function timeoutAware(err: unknown, what: string): unknown {
+  return err instanceof Error && err.name === "TimeoutError" ? new Error(`${what} timed out`) : err;
 }
 
 export async function replicateRun<T = unknown>(opts: ReplicateRunOptions): Promise<T> {
@@ -44,6 +48,9 @@ export async function replicateRun<T = unknown>(opts: ReplicateRunOptions): Prom
       prefer: "wait=60", // short-circuit if it finishes in <60s
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(90_000), // server holds up to 60s (prefer: wait) + headroom
+  }).catch((err) => {
+    throw timeoutAware(err, `Replicate ${endpoint}`);
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -58,7 +65,12 @@ export async function replicateRun<T = unknown>(opts: ReplicateRunOptions): Prom
       throw new Error(`Replicate prediction ${prediction.id} timed out after ${opts.timeoutMs ?? 600_000}ms`);
     }
     await new Promise((r) => setTimeout(r, pollMs));
-    const poll = await fetch(prediction.urls.get, { headers: { authorization: `Bearer ${token}` } });
+    const poll = await fetch(prediction.urls.get, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    }).catch((err) => {
+      throw timeoutAware(err, "Replicate poll");
+    });
     if (!poll.ok) {
       throw new Error(`Replicate poll returned ${poll.status}`);
     }

@@ -33,7 +33,7 @@ function editDistance(a: string[], b: string[]): number {
   return prev[n];
 }
 
-export interface WerResult {
+interface WerResult {
   wer: number; // 0 = perfect, can exceed 1 with many insertions
   refWords: number;
   edits: number;
@@ -49,7 +49,7 @@ export function wordErrorRate(reference: string, hypothesis: string): WerResult 
 
 // ---- scene-boundary F1 -------------------------------------------------------
 
-export interface F1Result {
+interface F1Result {
   precision: number;
   recall: number;
   f1: number;
@@ -90,7 +90,7 @@ export function boundaryF1(predicted: number[], expected: number[], toleranceMs:
 
 // ---- OCR recall (on-screen text) ---------------------------------------------
 
-export interface OcrResult {
+interface OcrResult {
   recall: number; // fraction of expected phrases found
   matched: number;
   expected: number;
