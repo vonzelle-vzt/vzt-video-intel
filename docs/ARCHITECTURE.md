@@ -38,7 +38,7 @@ Stage 3 (on demand)
 | OCR | Tesseract.js (WASM) | cloud OCR equivalent | Lite handles 95% of overlay text accurately. Cloud is better for dense text or non-Latin scripts. |
 | Entities | (skipped) | SAM2 video | SAM2 is the only model that does video segmentation with stable IDs. Too heavy for CPU WASM. |
 | Actions | ViT-GPT2 caption (WASM, ~250 MB) | Qwen2.5-VL | Lite captions one frame per scene — coarse, but it's real visual understanding offline. Qwen is far sharper; too heavy for CPU. |
-| Search | CLIP ViT-B/32 (ONNX) | CLIP-features | Both run the same model class; lite via @xenova/transformers, cloud at scale. |
+| Search | CLIP ViT-B/32 (ONNX) | CLIP-features | Both run the same model class; lite via @huggingface/transformers, cloud at scale. |
 
 ## Why two modes (lite + cloud) instead of three
 

@@ -23,6 +23,10 @@ interface Prediction {
   urls: { get: string; cancel: string };
 }
 
+// `prefer: wait=60` holds the create call open up to 60s, so leave headroom.
+const CREATE_TIMEOUT_MS = 90_000;
+const POLL_TIMEOUT_MS = 30_000;
+
 export async function replicateRun<T = unknown>(opts: ReplicateRunOptions): Promise<T> {
   const token = loadEnv().replicateToken;
   if (!token) {
@@ -44,6 +48,7 @@ export async function replicateRun<T = unknown>(opts: ReplicateRunOptions): Prom
       prefer: "wait=60", // short-circuit if it finishes in <60s
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(CREATE_TIMEOUT_MS),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -58,7 +63,10 @@ export async function replicateRun<T = unknown>(opts: ReplicateRunOptions): Prom
       throw new Error(`Replicate prediction ${prediction.id} timed out after ${opts.timeoutMs ?? 600_000}ms`);
     }
     await new Promise((r) => setTimeout(r, pollMs));
-    const poll = await fetch(prediction.urls.get, { headers: { authorization: `Bearer ${token}` } });
+    const poll = await fetch(prediction.urls.get, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
+    });
     if (!poll.ok) {
       throw new Error(`Replicate poll returned ${poll.status}`);
     }

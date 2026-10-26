@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
   <img src="https://img.shields.io/badge/Modes-cloud%20%2B%20lite-green.svg" alt="cloud + lite">
   <img src="https://img.shields.io/badge/Tests-20%2F20%20%2B%20E2E-success.svg" alt="tested">
-  <img src="https://img.shields.io/badge/Node-%3E%3D%2020-brightgreen.svg" alt="Node 20+">
+  <img src="https://img.shields.io/badge/Node-%3E%3D%2022-brightgreen.svg" alt="Node 22+">
 </p>
 
 ---
@@ -84,7 +84,7 @@ That's the whole product.
 
 ## Just give me a video
 
-You need **Node 20+**. That's it.
+You need **Node 22+**. That's it.
 
 ```bash
 npm install -g vzt-video-intel
@@ -104,11 +104,11 @@ Pure-Node WASM pipeline. **Verified working on a fresh Windows machine with no G
 
 | Stage | Backend | Verified |
 |---|---|---|
-| Transcript | `@xenova/transformers` Whisper-tiny (ONNX) | 4.6s for a 12s clip |
+| Transcript | `@huggingface/transformers` Whisper-tiny (ONNX) | 4.6s for a 12s clip |
 | Scenes | `ffmpeg-static` content-aware filter | < 1s |
 | OCR | `tesseract.js` (WASM) | 93% confidence, accurate bboxes |
 | Keyframes | `ffmpeg-static` | < 1s |
-| Semantic search | `@xenova/transformers` CLIP ViT-B/32 (ONNX) | ~7s for a 12s clip |
+| Semantic search | `@huggingface/transformers` CLIP ViT-B/32 (ONNX) | ~7s for a 12s clip |
 
 Heavy backends (Qwen-VL action recognition, SAM2 entity tracking) skip gracefully in lite mode — set a Replicate token to enable them. No native compilation. No Python. Runs on macOS / Linux / Windows identically.
 

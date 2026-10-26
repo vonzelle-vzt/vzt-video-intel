@@ -6,12 +6,12 @@ Each pipeline stage has up to two implementations — **lite** (pure-Node WASM) 
 
 | Stage | Lite (pure-Node, free, offline) | Cloud (Replicate, paid) |
 |---|---|---|
-| **Transcript** | `@xenova/transformers` Whisper-tiny.en (ONNX), 30s-windowed | `vaibhavs10/incredibly-fast-whisper` |
+| **Transcript** | `@huggingface/transformers` Whisper-tiny.en (ONNX), 30s-windowed | `vaibhavs10/incredibly-fast-whisper` |
 | **Scenes** | `ffmpeg-static` content-aware filter | (no cloud adapter — lite is fast enough) |
 | **OCR** | `tesseract.js` (WASM) | `abiruyt/text-extract-ocr` |
-| **CLIP search** | `@xenova/transformers` CLIP ViT-B/32 (ONNX) | `andreasjansson/clip-features` |
+| **CLIP search** | `@huggingface/transformers` CLIP ViT-B/32 (ONNX) | `andreasjansson/clip-features` |
 | **Entities (SAM2)** | (skip — falls back to "no entity tracking") | `meta/sam-2-video` |
-| **Actions / Chapters (Qwen2.5-VL)** | `@xenova/transformers` ViT-GPT2 caption (ONNX) | `qwen/qwen2.5-vl-7b-instruct` |
+| **Actions / Chapters (Qwen2.5-VL)** | `@huggingface/transformers` ViT-GPT2 caption (ONNX) | `qwen/qwen2.5-vl-7b-instruct` |
 
 ## How dispatch works
 
@@ -30,7 +30,7 @@ export async function transcribe(opts) {
 ```
 
 - `resolveStage()` reads `~/.vzt-video-intel/config.json` (or the `VZT_MODE` env var) to decide which adapter to load.
-- Dynamic imports keep the lite path from pulling in `@xenova/transformers` if you're only using cloud mode, and vice versa.
+- Dynamic imports keep the lite path from pulling in `@huggingface/transformers` if you're only using cloud mode, and vice versa.
 - Both adapters return the same TypeScript shape — the orchestrator + MCP server + CLI don't need to know which one ran.
 
 ## Lite adapter notes
