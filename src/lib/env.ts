@@ -73,7 +73,7 @@ export function hasCloudKey(): boolean {
 // model ids (`VZT_WHISPER_MODEL`, `VZT_CAPTION_MODEL`) — a Xenova id is not a
 // valid Replicate slug, and vice versa.
 
-export const DEFAULT_MODELS = {
+const DEFAULT_MODELS = {
   qwen: "qwen/qwen2.5-vl-7b-instruct", // chapters + action recognition
   sam: "meta/sam-2-video", // entity segmentation + tracking
   whisper: "vaibhavs10/incredibly-fast-whisper", // transcription (+ diarization)
