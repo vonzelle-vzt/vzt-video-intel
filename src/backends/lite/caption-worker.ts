@@ -22,7 +22,7 @@ interface Request {
 
 let modPromise: Promise<any> | null = null;
 function getMod(): Promise<any> {
-  return (modPromise ??= import("@xenova/transformers"));
+  return (modPromise ??= import("@huggingface/transformers"));
 }
 
 let captionerPromise: Promise<any> | null = null;

@@ -104,11 +104,11 @@ Pure-Node WASM pipeline. **Verified working on a fresh Windows machine with no G
 
 | Stage | Backend | Verified |
 |---|---|---|
-| Transcript | `@xenova/transformers` Whisper-tiny (ONNX) | 4.6s for a 12s clip |
+| Transcript | `@huggingface/transformers` Whisper-tiny (ONNX) | 4.6s for a 12s clip |
 | Scenes | `ffmpeg-static` content-aware filter | < 1s |
 | OCR | `tesseract.js` (WASM) | 93% confidence, accurate bboxes |
 | Keyframes | `ffmpeg-static` | < 1s |
-| Semantic search | `@xenova/transformers` CLIP ViT-B/32 (ONNX) | ~7s for a 12s clip |
+| Semantic search | `@huggingface/transformers` CLIP ViT-B/32 (ONNX) | ~7s for a 12s clip |
 
 Heavy backends (Qwen-VL action recognition, SAM2 entity tracking) skip gracefully in lite mode — set a Replicate token to enable them. No native compilation. No Python. Runs on macOS / Linux / Windows identically.
 
