@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/CLI-vintel-cyan.svg" alt="vintel CLI">
   <img src="https://img.shields.io/badge/Modes-cloud%20%2B%20lite-green.svg" alt="cloud + lite">
   <img src="https://img.shields.io/badge/Tests-20%2F20%20%2B%20E2E-success.svg" alt="tested">
-  <img src="https://img.shields.io/badge/Node-%3E%3D%2020-brightgreen.svg" alt="Node 20+">
+  <img src="https://img.shields.io/badge/Node-%3E%3D%2022-brightgreen.svg" alt="Node 22+">
 </p>
 
 ---
@@ -84,7 +84,7 @@ That's the whole product.
 
 ## Just give me a video
 
-You need **Node 20+**. That's it.
+You need **Node 22+**. That's it.
 
 ```bash
 npm install -g vzt-video-intel
